@@ -21,6 +21,7 @@ export interface RuntimeConfig {
    *   "sandbox-*"                  folders named `sandbox-…`
    *   "/home/me/repo"              exactly that project
    *   "/home/me/archive/**"        everything under that directory
+   *   "root"                       the root project (canonical "/")
    */
   hideProjects?: string[]
 }
@@ -53,7 +54,8 @@ function compilePattern(pattern: string): RegExp {
  */
 export function isProjectHidden(path: string, patterns: readonly string[] | undefined): boolean {
   if (!patterns?.length) return false
-  const basename = path.split("/").filter(Boolean).pop() ?? path
+  // A `/` project has no folder name; the UI calls it "root", so match that.
+  const basename = path === "/" ? "root" : (path.split("/").filter(Boolean).pop() ?? path)
   return patterns.some(
     (pattern) => pattern !== "" && compilePattern(pattern).test(pattern.includes("/") ? path : basename),
   )
