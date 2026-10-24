@@ -149,9 +149,12 @@ export function useTray() {
         // A question parks the turn on an answer, a permission on a grant, and a
         // finished turn on neither: the reason is what separates them, so the
         // three do not all arrive with the same sound.
-        if (conversation.reason === QUESTION_REASON) playQuestionChime()
+        const question = conversation.reason === QUESTION_REASON
+        if (question) playQuestionChime()
         else playAttentionChime()
-        if (conversation.state === "blocked") {
+        // A question sounds but does not pop: it is answered in the app, so the
+        // desktop notification would interrupt more than it helps.
+        if (conversation.state === "blocked" && !question) {
           void bridge?.tray?.notify({
             title: `${project.name} needs you`,
             body: `${conversation.title} — ${conversation.reason}`,

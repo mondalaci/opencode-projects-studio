@@ -299,9 +299,11 @@ conversation green, and opening it clears the mark. The set is kept in
 
 When the window is not focused (or is hidden) and a conversation starts wanting
 the user — blocked, or finished with the result unopened — the app plays a short
-two-note chime and, for a block, raises a desktop notification. A conversation
-that is merely *working* never announces itself, nothing already announced
-repeats, and Mute silences both the chime and the notifications.
+two-note chime and, for a permission block, raises a desktop notification. A
+question gets the chime only: it is answered in the app, so the popup would
+interrupt more than it helps. A conversation that is merely *working* never
+announces itself, nothing already announced repeats, and Mute silences both the
+chime and the notifications.
 
 "Blocked" covers two different asks, so they do not arrive sounding alike: a
 question waiting on an answer gets the lower, growling figure, and a permission
