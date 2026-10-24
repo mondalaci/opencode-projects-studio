@@ -1,7 +1,8 @@
 # OpenCode Projects Studio
 
 A desktop studio for **opencode** projects, built as an **Electron** app on top of
-the [kilo-web-chat](../kilo-web-chat) UI (Vue 3, Vite, TypeScript, Reka UI).
+the [opencode-web-chat](https://github.com/mondalaci/opencode-web-chat) UI
+(Vue 3, Vite, TypeScript, Reka UI).
 
 > Not built by the OpenCode team and not affiliated with them in any way. The
 > name follows OpenCode's own convention for projects that build on it
@@ -106,18 +107,25 @@ cp public/opencode-projects-studio.example.json public/opencode-projects-studio.
 `defaultAgent` preselects a primary agent on load, as long as the server exposes
 it; a `?agent=` GET param still takes precedence.
 
-Conversation search (`Alt`+`F`) uses the shared **opencode-search** service
-(a small Bun FTS5/BM25 index over message text, listening on `127.0.0.1:27184`)
+Conversation search (`Alt`+`F`) uses the shared
+[**opencode-search**](https://github.com/mondalaci/opencode-search) service (a
+small Bun FTS5/BM25 index over message text, listening on `127.0.0.1:27184`)
 when it is running, and falls back to the server's own title search when it is
 not. The sidebar header shows which one answered ("Content search" or
 "Fallback · titles"). Results are scoped to the current project's directory,
 matching the sidebar.
 
-The service lives in its own repository (`../opencode-search`) and is shared with
-`kilo-web-chat`: one process indexes several databases ("sources") and tags every
-result with its origin. This app queries the `opencode` source, i.e.
-`~/.local/share/opencode/opencode.db`. Start it with
-`pm2 start ecosystem.config.cjs` from that repository.
+The service lives in its own repository,
+[`opencode-search`](https://github.com/mondalaci/opencode-search), and is shared
+with [`opencode-web-chat`](https://github.com/mondalaci/opencode-web-chat): one
+process indexes several databases ("sources") and tags every result with its
+origin. This app queries the `opencode` source, i.e.
+`~/.local/share/opencode/opencode.db`. Clone it next to this repository and start
+it with `pm2 start ecosystem.config.cjs` from there:
+
+```bash
+git clone https://github.com/mondalaci/opencode-search ../opencode-search
+```
 
 ## How it is put together
 
@@ -139,7 +147,7 @@ public/
                      `npm run icon`; the tab cannot reach outside the web root)
 scripts/
   dev.mjs            Starts Vite, waits for the port, then launches Electron
-src/                 Renderer (Vue 3 app inherited from kilo-web-chat)
+src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   api/desktop.ts     Typed access to the preload bridge
   stores/projects.ts One conversation per project, plus its expanded chat list
   stores/archive.ts  Archived conversations, grouped by project, for viewing, restoring or deleting
