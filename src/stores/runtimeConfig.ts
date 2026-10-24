@@ -6,15 +6,69 @@
  * picked up on the next reload — no rebuild or restart needed. A missing or
  * invalid file is treated as an empty config, so the app keeps its defaults.
  *
- * It has no settings at the moment: the only one it carried preselected an agent,
- * and the app now runs everything on `build`. Nothing loads it yet — keep it for
- * the next deployment-wide setting, or delete it with its example file.
+ * Currently it carries `hideProjects`, the pattern list that keeps projects out
+ * of the sidebar.
  */
-export interface RuntimeConfig {}
+export interface RuntimeConfig {
+  /**
+   * Projects to omit from the sidebar. Each entry matches either the project's
+   * folder name (when it has no `/`) or its absolute canonical directory (when
+   * it does). `*` matches any run of characters except `/`, and `**` matches
+   * any run including `/`.
+   *
+   * Examples:
+   *   "scratch"                    the folder named `scratch`, anywhere
+   *   "sandbox-*"                  folders named `sandbox-…`
+   *   "/home/me/repo"              exactly that project
+   *   "/home/me/archive/**"        everything under that directory
+   */
+  hideProjects?: string[]
+}
 
 const CONFIG_URL = `${import.meta.env.BASE_URL}opencode-projects-studio.json`
 
+/** Compile one `hideProjects` entry: `*` = any run, `**` = any run including `/`. */
+function compilePattern(pattern: string): RegExp {
+  let source = ""
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i]!
+    if (char === "*") {
+      if (pattern[i + 1] === "*") {
+        source += ".*"
+        i++
+      } else {
+        source += "[^/]*"
+      }
+    } else {
+      source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    }
+  }
+  return new RegExp(`^${source}$`)
+}
+
+/**
+ * Whether a project's canonical directory is excluded by the configured
+ * patterns. A pattern with no `/` is matched against the folder name, so it
+ * hides that name anywhere; one with a `/` is matched against the whole path.
+ */
+export function isProjectHidden(path: string, patterns: readonly string[] | undefined): boolean {
+  if (!patterns?.length) return false
+  const basename = path.split("/").filter(Boolean).pop() ?? path
+  return patterns.some(
+    (pattern) => pattern !== "" && compilePattern(pattern).test(pattern.includes("/") ? path : basename),
+  )
+}
+
 let pending: Promise<RuntimeConfig> | null = null
+
+/** Keep only the settings we understand, so a malformed file cannot break us. */
+function normalizeConfig(data: unknown): RuntimeConfig {
+  if (!data || typeof data !== "object") return {}
+  const raw = (data as { hideProjects?: unknown }).hideProjects
+  if (!Array.isArray(raw)) return {}
+  const hideProjects = raw.filter((entry): entry is string => typeof entry === "string" && entry !== "")
+  return hideProjects.length ? { hideProjects } : {}
+}
 
 /** Fetch the runtime config once; resolves to `{}` when absent or invalid. */
 export function loadRuntimeConfig(): Promise<RuntimeConfig> {
@@ -22,7 +76,7 @@ export function loadRuntimeConfig(): Promise<RuntimeConfig> {
     pending = fetch(CONFIG_URL, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : {}))
       .catch(() => ({}))
-      .then((data) => (data && typeof data === "object" ? (data as RuntimeConfig) : {}))
+      .then(normalizeConfig)
   }
   return pending
 }

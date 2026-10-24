@@ -100,12 +100,15 @@ cp public/opencode-projects-studio.example.json public/opencode-projects-studio.
 
 ```json
 {
-  "defaultAgent": "plan"
+  "hideProjects": ["chats", "vocab"]
 }
 ```
 
-`defaultAgent` preselects a primary agent on load, as long as the server exposes
-it; a `?agent=` GET param still takes precedence.
+`hideProjects` lists projects to keep out of the sidebar. Each entry matches
+either a project's folder name (when it has no `/`) or its absolute canonical
+directory (when it does); `*` matches any run of characters except `/`, and `**`
+matches any run including `/`. Hidden projects still exist on the server — they
+are only omitted from this app's list, and matching is case-sensitive.
 
 Conversation search (`Alt`+`F`) uses the shared
 [**opencode-search**](https://github.com/mondalaci/opencode-search) service (a
