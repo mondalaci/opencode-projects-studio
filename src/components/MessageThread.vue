@@ -4,7 +4,7 @@ import MessageItem from "./MessageItem.vue"
 import Spinner from "./Spinner.vue"
 import { useChat } from "@/stores/chat"
 
-const { messages, loading, currentSessionID, scrollToBottomRequest, pendingForms, pendingPermissions, isBusy } = useChat()
+const { messages, loading, currentSessionID, scrollToBottomRequest, pendingForms, pendingPermissions, isBusy, awaitingUser } = useChat()
 
 const viewport = ref<HTMLElement | null>(null)
 const pinned = ref(true)
@@ -24,8 +24,23 @@ const lastAssistantID = computed(() => {
   return null
 })
 
-/** The newest message, which is the one a live turn is still appending to. */
-const lastID = computed(() => messages.value[messages.value.length - 1]?.id ?? null)
+/**
+ * The id of the trailing assistant message whose *text* is streaming, which is
+ * the only place the caret belongs.
+ *
+ * The caret is the cursor of arriving prose, so a turn that has moved on to a
+ * tool call is no longer streaming text — the tool row carries its own spinner —
+ * and a step blocked on a question or a permission is waiting for the reader,
+ * not the model. Drawing it then parked a blinking cursor with nothing to
+ * follow, directly above the question card.
+ */
+const streamingTextID = computed(() => {
+  if (!isBusy.value || awaitingUser.value) return null
+  const last = messages.value[messages.value.length - 1]
+  if (!last || last.type !== "assistant") return null
+  const parts = last.content
+  return parts[parts.length - 1]?.type === "text" ? last.id : null
+})
 
 function onScroll() {
   const el = viewport.value
@@ -131,7 +146,7 @@ onMounted(() => {
         :key="message.id"
         :message="message"
         :streaming="message.id === lastAssistantID && message.type === 'assistant' && !message.time?.completed"
-        :caret="isBusy && message.type === 'assistant' && message.id === lastID"
+        :caret="message.id === streamingTextID"
       />
     </template>
 
