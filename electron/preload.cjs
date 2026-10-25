@@ -76,12 +76,31 @@ const trayApi = {
   },
 }
 
+/**
+ * Web chat presence: the conversation states the browser app reports to this
+ * process's loopback endpoint. The main process owns the endpoint and the
+ * freshness rule; the renderer only draws what it is handed.
+ *
+ * `current()` is for a renderer that has just started: pushes made before it
+ * existed are gone, and without them a reload would blank the dot until the
+ * next heartbeat.
+ */
+const webchatApi = {
+  current: () => ipcRenderer.invoke("webchat:status-current"),
+  onStatus: (listener) => {
+    const wrapped = (_event, picture) => listener(picture)
+    ipcRenderer.on("webchat:status", wrapped)
+    return () => ipcRenderer.removeListener("webchat:status", wrapped)
+  },
+}
+
 contextBridge.exposeInMainWorld("opencodeDesktop", {
   desktop: true,
   platform: process.platform,
   git,
   files: filesApi,
   tray: trayApi,
+  webchat: webchatApi,
   shell: shellApi,
   window: windowApi,
 })

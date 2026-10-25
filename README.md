@@ -295,6 +295,43 @@ logs a warning and carries on without it.
 conversation green, and opening it clears the mark. The set is kept in
 `localStorage`, so it survives a restart.
 
+### The web chat app's conversations
+
+[OpenCode Chat](https://github.com/mondalaci/opencode-web-chat) — the browser UI
+for the same servers — reports its conversations here too, so one tray covers
+both. Its tabs POST a small JSON report to a loopback endpoint this app's main
+process listens on:
+
+| | |
+| --- | --- |
+| Where | `http://127.0.0.1:45998/status` (`electron/status-server.cjs`) |
+| When | on every change, on a 20-second heartbeat, and once as a beacon on unload |
+
+A browser tab cannot be reached, so it pushes; nothing has to be configured, and
+with the web app closed the endpoint simply hears nothing. Each tab reports under
+its own id, so two tabs are two entries and closing one leaves the other's status
+standing. A report that stops arriving is dropped after `EXPIRY_MS` — a killed
+tab never sends its beacon, and its dot must not stand forever.
+
+Web chat conversations are shown, but kept visibly apart from studio's own:
+
+- **A separate dot, bottom-LEFT** — studio's own conversations keep the
+  bottom-right one. Two corners, so neither can hide the other, and the left dot
+  carries no number: the badge counts *projects*, which is studio's own rollup.
+- **A section in the menu**, one entry per conversation that has something to
+  say, labelled `<project> — <title> (<reason>)`. Clicking one opens it in the
+  browser rather than raising this window, because the browser is what holds it.
+- **A line in the tooltip**, `OpenCode Chat — b blocked, w working, d done (n open)`.
+
+Nothing is drawn, listed or counted for a web chat conversation that is idle: the
+tray has nothing to say about those, and a hundred idle conversations would bury
+the one that does. Only the conversations with news cross the wire.
+
+The chime and the notification policy below covers these conversations on exactly
+the same terms as studio's own, and `previousAttention` is keyed by conversation
+id — which is server-wide, so a conversation open in both apps announces itself
+once rather than twice.
+
 ### Attention chime
 
 When the window is not focused (or is hidden) and a conversation starts wanting

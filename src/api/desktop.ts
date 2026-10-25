@@ -6,6 +6,8 @@
  * degrade gracefully instead of assuming the git IPC surface exists.
  */
 
+import type { ConversationState } from "@/utils/sessionState"
+
 export type GitScope = "staged" | "worktree" | "untracked"
 
 export interface GitRepoInfo {
@@ -122,6 +124,8 @@ export interface TrayMenuItem {
   enabled?: boolean
   /** Clicking this entry focuses the conversation with this id. */
   sessionID?: string
+  /** Clicking this entry opens this http(s) URL, for a conversation the browser owns. */
+  url?: string
   /** Built-in action for the fixed entries at the bottom of the menu. */
   action?: "open" | "mute" | "quit"
   submenu?: TrayMenuItem[]
@@ -138,7 +142,12 @@ export interface TrayUpdate {
 /** Tray icon, its menu, and the notifications behind them. */
 export interface DesktopTrayApi {
   update(payload: TrayUpdate): Promise<void>
-  notify(payload: { title: string; body: string; sessionID?: string }): Promise<void>
+  /**
+   * A desktop notification. `sessionID` focuses a studio conversation when the
+   * notification is clicked; `url` opens a web chat conversation in the browser
+   * instead, since the browser owns that one.
+   */
+  notify(payload: { title: string; body: string; sessionID?: string; url?: string }): Promise<void>
   /** Tray clicks that only the main process can turn into window actions. */
   onFocusSession(listener: (sessionID: string) => void): () => void
   onAction(listener: (action: "open" | "mute") => void): () => void
@@ -148,6 +157,46 @@ export interface DesktopTrayApi {
 export interface DesktopFilesApi {
   list(directory: string): Promise<FileListResult>
   read(request: { dir: string; path: string }): Promise<FileReadResult>
+}
+
+/** One conversation as the web chat app reports it. */
+export interface WebChatConversation {
+  id: string
+  title: string
+  /** The project directory the conversation lives in, when it reported one. */
+  project: string
+  state: ConversationState
+  reason: string
+}
+
+/** One reporting browser tab. */
+export interface WebChatClient {
+  /** Stable per-tab id, so two tabs are two entries. */
+  client: string
+  /** The app root, so a conversation can be opened in the browser. */
+  url: string
+  /** When the last report arrived; the main process drops stale clients. */
+  at: number
+  /** How many conversations the tab has open, with news or without. */
+  open: number
+  /** The tab as a whole. */
+  state: ConversationState
+  /** Only the conversations with something to say: idle ones are not reported. */
+  conversations: WebChatConversation[]
+}
+
+/** Every live web chat tab, as the main process sees them. */
+export interface WebChatPicture {
+  at: number
+  clients: WebChatClient[]
+}
+
+/** Conversation state reported by the web chat app, on its way to the tray. */
+export interface DesktopWebChatApi {
+  /** The current picture, for a renderer that has just loaded. */
+  current(): Promise<WebChatPicture | null>
+  /** Subscribe to changes; returns an unsubscribe function. */
+  onStatus(listener: (picture: WebChatPicture) => void): () => void
 }
 
 /** A point in the same DIP space as window bounds. */
@@ -188,6 +237,7 @@ export interface DesktopBridge {
   }
   files: DesktopFilesApi
   tray: DesktopTrayApi
+  webchat: DesktopWebChatApi
   shell: {
     reveal(target: string): Promise<void>
     openExternal(url: string): Promise<void>

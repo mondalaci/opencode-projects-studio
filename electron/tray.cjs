@@ -11,7 +11,7 @@
  * `click` events may never fire. The menu therefore repeats the window actions
  * ("Open OpenCode Projects Studio") so nothing is unreachable there.
  */
-const { Notification, Menu, Tray, app, nativeImage } = require("electron")
+const { Notification, Menu, Tray, app, nativeImage, shell } = require("electron")
 
 /** Show the window, raising it if it exists but is hidden or minimised. */
 function raiseWindow(window) {
@@ -48,6 +48,12 @@ function createTrayManager({ iconPath, getWindow }) {
             raiseWindow(getWindow())
             const window = getWindow()
             if (window && !window.isDestroyed()) window.webContents.send("tray:focus-session", item.sessionID)
+          }
+        } else if (item.url) {
+          // A conversation that lives in the web chat app: the browser owns it, so
+          // the entry opens it there rather than raising this window.
+          entry.click = () => {
+            if (/^https?:\/\//i.test(item.url)) void shell.openExternal(item.url)
           }
         } else if (item.action === "open") {
           entry.click = () => raiseWindow(getWindow())
@@ -114,7 +120,7 @@ function createTrayManager({ iconPath, getWindow }) {
       }
     },
 
-    /** Show a notification, unless muted, and focus its conversation on click. */
+    /** Show a notification, unless muted, and open its conversation on click. */
     notify(payload) {
       if (muted || !Notification.isSupported()) return
       const notification = new Notification({
@@ -123,6 +129,12 @@ function createTrayManager({ iconPath, getWindow }) {
         silent: false,
       })
       notification.on("click", () => {
+        // A conversation in the web chat app belongs to the browser, so the click
+        // opens it there rather than raising a window that does not hold it.
+        if (payload?.url && /^https?:\/\//i.test(payload.url)) {
+          void shell.openExternal(payload.url)
+          return
+        }
         raiseWindow(getWindow())
         const window = getWindow()
         if (payload?.sessionID && window && !window.isDestroyed()) {

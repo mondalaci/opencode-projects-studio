@@ -14,6 +14,7 @@ const git = require("./git.cjs")
 const files = require("./files.cjs")
 const { createTrayManager } = require("./tray.cjs")
 const { startStaticServer } = require("./static-server.cjs")
+const { createStatusServer } = require("./status-server.cjs")
 
 // With ELECTRON_RUN_AS_NODE=1 in the environment the Electron binary behaves as
 // plain Node and `require("electron")` hands back a path string instead of the
@@ -51,6 +52,26 @@ const DEFAULT_HEIGHT = 940
 
 /** The tray, once the app is ready. */
 let tray = null
+
+/**
+ * The endpoint the web chat app reports to, and the subscription that forwards
+ * its picture to the renderer.
+ */
+let statusServer = null
+let detachStatus = null
+
+/**
+ * The renderer holds the tray rollup, so the web chat's picture is pushed to it
+ * rather than kept here. A renderer that has just loaded has missed every earlier
+ * push — reloading the UI would otherwise blank the dot until the next heartbeat
+ * — so it also pulls the current picture when it starts (see the
+ * `webchat:status-current` handler below).
+ */
+function broadcastStatus(picture) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("webchat:status", picture)
+  }
+}
 
 /**
  * Saved window geometry lives beside the other per-user data so the window
@@ -246,6 +267,11 @@ function registerIpc() {
   ipcMain.handle("tray:update", (_event, payload) => tray?.update(payload))
   ipcMain.handle("tray:notify", (_event, payload) => tray?.notify(payload))
 
+  // A renderer that has just started asks for the web chat picture, so a reload
+  // does not blank the dot until the next heartbeat. The push and the pull use
+  // different channels: an `invoke` reply is not something `on` can hear.
+  ipcMain.handle("webchat:status-current", () => statusServer?.snapshot() ?? { clients: [] })
+
   ipcMain.handle("app:info", () => ({
     name: app.getName(),
     version: app.getVersion(),
@@ -358,6 +384,13 @@ if (!app.requestSingleInstanceLock() && !CAPTURE_PATH) {
   app.whenReady().then(async () => {
     setupMenu()
 
+    // The web chat app reports here, and the renderer decides what its dot looks
+    // like, so the two are joined by a push in one direction and a pull in the
+    // other.
+    statusServer = createStatusServer()
+    detachStatus = statusServer.onChange((picture) => broadcastStatus(picture))
+    await statusServer.start()
+
     let url = DEV_URL
     if (!url) {
       if (!fs.existsSync(path.join(DIST, "index.html"))) {
@@ -400,5 +433,12 @@ if (!app.requestSingleInstanceLock() && !CAPTURE_PATH) {
     tray?.destroy()
     tray = null
     if (process.platform !== "darwin") app.quit()
+  })
+
+  app.on("will-quit", () => {
+    detachStatus?.()
+    detachStatus = null
+    statusServer?.stop()
+    statusServer = null
   })
 }
