@@ -22,8 +22,9 @@ import {
  *
  * The web chat app's conversations ride along: its tabs report to the main
  * process, which hands them here, and they share the icon (bottom-left, where
- * studio's own dots sit bottom-right), the menu, and the chime policy. Only the
- * count in the badge stays studio's, because it counts projects.
+ * studio's own dots sit bottom-right), the menu, and the chime policy. Their dot
+ * matches studio's own — always drawn, same size, grey for nothing to report —
+ * and only the count in the badge stays studio's, because it counts projects.
  */
 
 const MUTE_KEY = "opencode-projects-studio.mute"

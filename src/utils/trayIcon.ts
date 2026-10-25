@@ -34,6 +34,14 @@ const DOT_COLOURS: Record<ConversationState, string> = {
 const SIZE = 64
 
 /**
+ * The dot radius, as a fraction of the icon, for a dot that carries no number.
+ *
+ * Both corners use it, so the two dots are the same size; only the badge grows
+ * the right one, because only it has text to fit.
+ */
+const DOT_RADIUS = 0.15
+
+/**
  * Which corner a dot sits in. Studio's own conversations take the right one; the
  * web chat app's take the left, so one icon carries both without either hiding
  * the other.
@@ -66,7 +74,7 @@ function drawDot(
   const badge = count > 0
   const offset = SIZE / 32
   // Two characters ("9+") need a wider dot, or the text overflows it.
-  const radius = badge ? (count > 9 ? SIZE * 0.28 : SIZE * 0.22) : SIZE * 0.15
+  const radius = badge ? (count > 9 ? SIZE * 0.28 : SIZE * 0.22) : SIZE * DOT_RADIUS
   const cx = corner === "left" ? radius + offset / 2 : SIZE - radius - offset / 2
   const cy = SIZE - radius - offset / 2
 
@@ -90,20 +98,20 @@ function drawDot(
 }
 
 /**
- * A PNG data URL for the tray: the app icon, a state dot carrying `count` in the
- * bottom-right corner for studio's own conversations, and — when the web chat
- * app has anything to say — a plain dot in the bottom-left for its own. The
- * corners are what keep the two apart; the left dot carries no number because
- * the count means "projects needing attention", which is studio's.
+ * A PNG data URL for the tray: the app icon with a state dot in each bottom
+ * corner — studio's own conversations on the right, the web chat app's on the
+ * left. Both are always drawn and both use the same base size; only the number
+ * grows the right one, because only it carries text. A grey dot therefore means
+ * the same thing in either corner: nothing to report.
  *
  * Results are cached per combination, since the panel is redrawn rarely.
  */
 export async function trayIconDataURL(
   state: ConversationState,
   count: number,
-  webchat: ConversationState | null = null,
+  webchat: ConversationState,
 ): Promise<string> {
-  const key = `${state}:${count}:${webchat ?? "-"}`
+  const key = `${state}:${count}:${webchat}`
   const cached = cache.get(key)
   if (cached) return cached
 
@@ -121,9 +129,7 @@ export async function trayIconDataURL(
   ctx.drawImage(image, badge ? SIZE * 0.04 : (SIZE - side) / 2, (SIZE - side) / 2, side, side)
 
   drawDot(ctx, state, count)
-  // Idle is the absence of news: the left corner stays empty rather than
-  // carrying a permanently grey dot.
-  if (webchat && webchat !== "idle") drawDot(ctx, webchat, 0, "left")
+  drawDot(ctx, webchat, 0, "left")
 
   const url = canvas.toDataURL("image/png")
   cache.set(key, url)

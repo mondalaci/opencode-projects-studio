@@ -316,16 +316,20 @@ tab never sends its beacon, and its dot must not stand forever.
 Web chat conversations are shown, but kept visibly apart from studio's own:
 
 - **A separate dot, bottom-LEFT** — studio's own conversations keep the
-  bottom-right one. Two corners, so neither can hide the other, and the left dot
-  carries no number: the badge counts *projects*, which is studio's own rollup.
+  bottom-right one. Two corners, so neither can hide the other. The two dots match:
+  both are always drawn and both are the same size, so a grey one means the same
+  thing in either corner — nothing to report. Only the right one grows, and only
+  when it has a number to carry: the badge counts *projects*, which is studio's own
+  rollup.
 - **A section in the menu**, one entry per conversation that has something to
   say, labelled `<project> — <title> (<reason>)`. Clicking one opens it in the
   browser rather than raising this window, because the browser is what holds it.
 - **A line in the tooltip**, `OpenCode Chat — b blocked, w working, d done (n open)`.
 
-Nothing is drawn, listed or counted for a web chat conversation that is idle: the
+Nothing is *listed* or *counted* for a web chat conversation that is idle: the
 tray has nothing to say about those, and a hundred idle conversations would bury
-the one that does. Only the conversations with news cross the wire.
+the one that does. Only the conversations with news cross the wire. The dot is a
+different matter — it reports the app, not its conversations, so it stays.
 
 The chime and the notification policy below covers these conversations on exactly
 the same terms as studio's own, and `previousAttention` is keyed by conversation
