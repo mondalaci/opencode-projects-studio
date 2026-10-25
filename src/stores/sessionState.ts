@@ -26,13 +26,33 @@ import {
 
 const UNREAD_KEY = "opencode-projects-studio.unread-sessions"
 
-/** How often the baseline sweep re-reads the global pending lists. */
+/** How often the sweep reconciles the directories holding a blocked conversation. */
 const SWEEP_MS = 2000
+
+/** Run `worker` over `items` with at most `limit` in flight at once. */
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await worker(items[index])
+    }
+  })
+  await Promise.all(runners)
+  return results
+}
 
 interface SessionSignals {
   status?: string
   /** Pending request that needs the user, with a short reason. */
   blockedReason?: string
+  /**
+   * Directory of the pending request, so the sweep can re-read that project's
+   * list. The pending lists are per-location, so without this the sweep cannot
+   * tell a missing entry from one it never asked for.
+   */
+  blockedDirectory?: string
 }
 
 const signals = ref<Record<string, SessionSignals>>({})
@@ -80,8 +100,14 @@ export function useSessionState() {
     signals.value = { ...signals.value, [sessionID]: { ...current, ...next } }
   }
 
-  function setBlocked(sessionID: string, reason: string | undefined) {
-    patch(sessionID, { blockedReason: reason })
+  function setBlocked(sessionID: string, reason: string | undefined, directory?: string) {
+    if (reason === undefined) {
+      patch(sessionID, { blockedReason: undefined, blockedDirectory: undefined })
+      return
+    }
+    // Keep the directory we already recorded when the event does not carry one.
+    const current = signals.value[sessionID]?.blockedDirectory
+    patch(sessionID, { blockedReason: reason, blockedDirectory: directory ?? current })
   }
 
   function markUnreadIfUnwatched(sessionID: string) {
@@ -100,6 +126,10 @@ export function useSessionState() {
     const data = event.data
     if (!data) return
     const sessionID = data.sessionID as string | undefined
+    // Every frame is tagged with its project, which is what scopes the sweep's
+    // follow-up query (the pending lists are per-location).
+    const directory =
+      event.location?.directory ?? (data.location as { directory?: string } | undefined)?.directory
 
     switch (type) {
       case "session.execution.started":
@@ -128,7 +158,7 @@ export function useSessionState() {
         const request = data as unknown as PermissionRequest
         if (request?.id && request.sessionID) {
           requestSession.set(request.id, request.sessionID)
-          setBlocked(request.sessionID, `permission: ${request.action}`)
+          setBlocked(request.sessionID, `permission: ${request.action}`, directory)
         }
         break
       }
@@ -145,7 +175,7 @@ export function useSessionState() {
         const form = (data.form ?? data) as unknown as FormInfo
         if (form?.id && form.sessionID) {
           requestSession.set(form.id, form.sessionID)
-          setBlocked(form.sessionID, QUESTION_REASON)
+          setBlocked(form.sessionID, QUESTION_REASON, directory)
         }
         break
       }
@@ -163,40 +193,105 @@ export function useSessionState() {
 
     // The same events also keep every project's newest conversation current.
     if (type === "session.created" || type === "session.updated") {
-      const directory = (data.location as { directory?: string } | undefined)?.directory
       if (directory && directory !== server.directory.value) projects.applyEvent(type, data)
     }
   }
 
-  /** Baseline: re-read the global pending permission and form lists. */
-  async function sweep() {
+  /**
+   * The pending permission/question blocks for one project directory.
+   *
+   * The lists are per-`location`, so the directory decides which conversations
+   * the answer covers — a request against the wrong directory looks like "no
+   * pending request at all", which is what used to wipe live blocked dots.
+   */
+  async function pendingBlocked(client: ServerClient, directory: string) {
+    const [permissions, forms] = await Promise.all([
+      client.listPermissions({ directory }),
+      client.listForms({ directory }),
+    ])
+    const blocked = new Map<string, string>()
+    for (const request of permissions) {
+      if (!request?.id || !request.sessionID) continue
+      requestSession.set(request.id, request.sessionID)
+      blocked.set(request.sessionID, `permission: ${request.action}`)
+    }
+    for (const form of forms) {
+      if (!form?.id || !form.sessionID) continue
+      requestSession.set(form.id, form.sessionID)
+      blocked.set(form.sessionID, QUESTION_REASON)
+    }
+    return blocked
+  }
+
+  /**
+   * Reconcile the blocked flags against the pending lists of `directories`.
+   *
+   * A directory is only trusted once its query has succeeded: a failed request
+   * says nothing about whether its requests are still pending, so it must not
+   * clear anything. Only a block whose own directory was read, and that is no
+   * longer in that directory's list, is cleared.
+   */
+  async function reconcile(directories: Array<string | undefined>) {
     const client = activeClient
     if (!client) return
-    try {
-      const [permissions, forms] = await Promise.all([
-        client.listPermissions().catch(() => [] as PermissionRequest[]),
-        client.listForms().catch(() => [] as FormInfo[]),
-      ])
-      const blocked = new Map<string, string>()
-      for (const request of permissions) {
-        if (!request?.id || !request.sessionID) continue
-        requestSession.set(request.id, request.sessionID)
-        blocked.set(request.sessionID, `permission: ${request.action}`)
+    const unique = [...new Set(directories.filter((directory): directory is string => Boolean(directory)))]
+    const found = new Map<string, { reason: string; directory: string }>()
+    const read = new Set<string>()
+    await mapLimit(unique, 4, async (directory) => {
+      try {
+        const blocked = await pendingBlocked(client, directory)
+        read.add(directory)
+        for (const [sessionID, reason] of blocked) found.set(sessionID, { reason, directory })
+      } catch {
+        /* unread: leave that directory's blocks alone */
       }
-      for (const form of forms) {
-        if (!form?.id || !form.sessionID) continue
-        requestSession.set(form.id, form.sessionID)
-        blocked.set(form.sessionID, QUESTION_REASON)
+    })
+    const next = { ...signals.value }
+    for (const [sessionID, signal] of Object.entries(next)) {
+      const directory = signal.blockedDirectory
+      if (signal.blockedReason && directory && read.has(directory) && !found.has(sessionID)) {
+        next[sessionID] = { ...signal, blockedReason: undefined, blockedDirectory: undefined }
       }
-      const next = { ...signals.value }
-      for (const [sessionID, signal] of Object.entries(next)) {
-        if (signal.blockedReason && !blocked.has(sessionID)) next[sessionID] = { ...signal, blockedReason: undefined }
-      }
-      for (const [sessionID, reason] of blocked) next[sessionID] = { ...next[sessionID], blockedReason: reason }
-      signals.value = next
-    } catch {
-      /* the sweep will try again */
     }
+    for (const [sessionID, entry] of found) {
+      next[sessionID] = { ...next[sessionID], blockedReason: entry.reason, blockedDirectory: entry.directory }
+    }
+    signals.value = next
+  }
+
+  /** Directories that currently hold a blocked conversation. */
+  function blockedDirectories(): string[] {
+    const directories = new Set<string>()
+    for (const signal of Object.values(signals.value)) {
+      if (signal.blockedReason && signal.blockedDirectory) directories.add(signal.blockedDirectory)
+    }
+    return [...directories]
+  }
+
+  /**
+   * Repair pass: re-read every project's pending lists, so a block that arrived
+   * while the stream was down is picked up and one answered meanwhile is cleared.
+   * Runs on (re)connect, when the whole picture is worth rebuilding.
+   */
+  async function sweepAll() {
+    const directories = [
+      ...projects.entries.value.map((entry) => entry.directory),
+      server.directory.value,
+      ...blockedDirectories(),
+    ]
+    await reconcile(directories)
+  }
+
+  /**
+   * Cheap repair pass: only the directories that already hold a blocked
+   * conversation, so the timer does not fan out one query per project. This is
+   * what keeps a live question or permission red — its directory is read and its
+   * entry is still there. With nothing blocked there is nothing to reconcile.
+   */
+  async function sweep() {
+    const directories = blockedDirectories()
+    if (!directories.length) return
+    await reconcile(directories)
   }
 
   /** Subscribe to the global stream, reconnecting until stopped. */
@@ -212,7 +307,7 @@ export function useSessionState() {
             signal,
             onOpen: () => {
               globalLive.value = true
-              void sweep()
+              void sweepAll()
             },
           })
         } catch {
@@ -244,7 +339,7 @@ export function useSessionState() {
     activeClient = client
     watchWindow()
     void follow(client)
-    void sweep()
+    void sweepAll()
     sweepTimer = setInterval(() => void sweep(), SWEEP_MS)
   }
 

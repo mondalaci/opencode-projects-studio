@@ -47,7 +47,7 @@ export class ServerError extends Error {
 
 export interface RequestOptions {
   method?: string
-  /** Instance directory (project) to scope the request to (`/api` `directory`). */
+  /** Instance directory (project) to scope the request to (`?location[directory]=`). */
   directory?: string
   query?: Record<string, string | number | boolean | undefined>
   body?: unknown
@@ -114,7 +114,14 @@ export class ServerClient {
 
   private url(path: string, opts?: RequestOptions): string {
     const url = new URL(this.origin + path)
-    if (opts?.directory) url.searchParams.set("directory", opts.directory)
+    // Instance-scoped endpoints (form, permission/request, config, model, fs,
+    // vcs, ...) select the project with a `location` **deep object**:
+    // `?location[directory]=/path`. A flat `?directory=` is ignored by them and
+    // falls back to the server's own directory — which made the pending
+    // form/permission lists look empty and cleared live "blocked" dots. The one
+    // endpoint that wants the flat form is `/api/session` (the list), which
+    // passes it through `query` instead.
+    if (opts?.directory) url.searchParams.set("location[directory]", opts.directory)
     for (const [key, value] of Object.entries(opts?.query ?? {})) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value))
     }
@@ -300,10 +307,13 @@ export class ServerClient {
   async listSessions(
     opts: RequestOptions & { limit?: number; search?: string; cursor?: string; archived?: boolean } = {},
   ): Promise<ListEnvelope<SessionInfo>> {
-    const { limit, search, cursor, archived, ...rest } = opts
+    const { limit, search, cursor, archived, directory, ...rest } = opts
+    // `/api/session` is the one endpoint scoped by a flat `directory` query
+    // parameter rather than the `location[directory]` deep object, so it is put
+    // into `query` here instead of riding `opts.directory`.
     return this.request<ListEnvelope<SessionInfo>>("/api/session", {
       ...rest,
-      query: { limit, search, cursor, archived, ...rest.query },
+      query: { limit, search, cursor, archived, directory, ...rest.query },
     })
   }
 

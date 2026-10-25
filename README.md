@@ -366,8 +366,9 @@ each tagged with its `location`, so a single subscription keeps all the dots and
 the tray current. A `BroadcastChannel` elects one leader tab to hold the stream
 and fan the events out, so several open tabs do not each open their own
 connection. Because a stream only reports changes, a bounded poll re-reads the
-server's global pending permission and form lists to repair anything missed
-while offline.
+pending-permission and pending-form lists of the projects that currently hold a
+blocked conversation, and reconnecting rebuilds the whole picture, to repair
+anything missed while offline.
 
 ## Keyboard shortcuts
 
