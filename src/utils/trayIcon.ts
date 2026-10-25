@@ -65,16 +65,29 @@ function loadIcon(): Promise<HTMLImageElement> {
   })
 }
 
+/**
+ * The radius a corner's number needs, never more than `cap`.
+ *
+ * The cap exists because the two corners share one 64px icon: two "9+" dots at
+ * their natural size add up to more than the icon is wide, so they overlap in the
+ * middle. When both corners carry a number they both take the smaller size, which
+ * still fits its text.
+ */
+function badgeRadius(count: number, cap: number): number {
+  if (count <= 0) return DOT_RADIUS
+  return Math.min(count > 9 ? 0.28 : 0.22, cap)
+}
+
 function drawDot(
   ctx: CanvasRenderingContext2D,
   state: ConversationState,
   count: number,
   corner: Corner = "right",
+  radiusFactor: number = badgeRadius(count, 1),
 ) {
   const badge = count > 0
   const offset = SIZE / 32
-  // Two characters ("9+") need a wider dot, or the text overflows it.
-  const radius = badge ? (count > 9 ? SIZE * 0.28 : SIZE * 0.22) : SIZE * DOT_RADIUS
+  const radius = SIZE * radiusFactor
   const cx = corner === "left" ? radius + offset / 2 : SIZE - radius - offset / 2
   const cy = SIZE - radius - offset / 2
 
@@ -100,18 +113,22 @@ function drawDot(
 /**
  * A PNG data URL for the tray: the app icon with a state dot in each bottom
  * corner — studio's own conversations on the right, the web chat app's on the
- * left. Both are always drawn and both use the same base size; only the number
- * grows the right one, because only it carries text. A grey dot therefore means
- * the same thing in either corner: nothing to report.
+ * left. Both are always drawn and both follow one rule: the same base size, and
+ * a number when that corner has one to report. A grey dot therefore means the
+ * same thing in either corner: nothing to report.
+ *
+ * What the numbers count differs, because what the two apps hold differs —
+ * studio counts *projects* that want the user, the web chat counts the
+ * *conversations* that do.
  *
  * Results are cached per combination, since the panel is redrawn rarely.
  */
 export async function trayIconDataURL(
   state: ConversationState,
   count: number,
-  webchat: ConversationState,
+  webchat: { state: ConversationState; count: number },
 ): Promise<string> {
-  const key = `${state}:${count}:${webchat}`
+  const key = `${state}:${count}:${webchat.state}:${webchat.count}`
   const cached = cache.get(key)
   if (cached) return cached
 
@@ -122,14 +139,16 @@ export async function trayIconDataURL(
   const ctx = canvas.getContext("2d")
   if (!ctx) return ""
 
-  // With a badge the icon shifts left and shrinks a little, so the larger dot
-  // clears it.
-  const badge = count > 0
+  // A badge needs room, so the icon gives up some of its size and stays centred:
+  // either corner may be the one carrying a number, and both then get the same
+  // clearance from the artwork.
+  const badge = count > 0 || webchat.count > 0
   const side = SIZE * (badge ? 0.84 : 0.96)
-  ctx.drawImage(image, badge ? SIZE * 0.04 : (SIZE - side) / 2, (SIZE - side) / 2, side, side)
+  ctx.drawImage(image, (SIZE - side) / 2, (SIZE - side) / 2, side, side)
 
-  drawDot(ctx, state, count)
-  drawDot(ctx, webchat, 0, "left")
+  const cap = count > 0 && webchat.count > 0 ? 0.22 : 1
+  drawDot(ctx, state, count, "right", badgeRadius(count, cap))
+  drawDot(ctx, webchat.state, webchat.count, "left", badgeRadius(webchat.count, cap))
 
   const url = canvas.toDataURL("image/png")
   cache.set(key, url)

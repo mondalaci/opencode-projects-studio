@@ -309,18 +309,23 @@ process listens on:
 
 A browser tab cannot be reached, so it pushes; nothing has to be configured, and
 with the web app closed the endpoint simply hears nothing. Each tab reports under
-its own id, so two tabs are two entries and closing one leaves the other's status
-standing. A report that stops arriving is dropped after `EXPIRY_MS` — a killed
-tab never sends its beacon, and its dot must not stand forever.
+its own id, so closing one leaves the others' status standing, and a report that
+stops arriving is dropped after `EXPIRY_MS` — a killed tab never sends its beacon,
+and its dot must not stand forever. The conversations themselves are folded by id,
+because every tab lists the same project's: three tabs holding two conversations
+that want attention are two, not six.
 
 Web chat conversations are shown, but kept visibly apart from studio's own:
 
 - **A separate dot, bottom-LEFT** — studio's own conversations keep the
-  bottom-right one. Two corners, so neither can hide the other. The two dots match:
-  both are always drawn and both are the same size, so a grey one means the same
-  thing in either corner — nothing to report. Only the right one grows, and only
-  when it has a number to carry: the badge counts *projects*, which is studio's own
-  rollup.
+  bottom-right one. Two corners, so neither can hide the other, and one rule for
+  both: always drawn, the same base size, and a number when that corner has one to
+  report. A grey dot therefore means the same thing in either corner. What the two
+  numbers *count* differs, because what the two apps hold differs — studio counts
+  the **projects** that want the user, the web chat counts the **conversations**
+  that do (blocked, or finished and not yet looked at). When both corners carry a
+  number they take the smaller size, since two large ones will not fit side by side
+  in one 64px icon.
 - **A section in the menu**, one entry per conversation that has something to
   say, labelled `<project> — <title> (<reason>)`. Clicking one opens it in the
   browser rather than raising this window, because the browser is what holds it.

@@ -44,11 +44,22 @@ export function useWebChat() {
 
   const clients = computed<WebChatClient[]>(() => picture.value.clients)
 
-  /** Every reported conversation, most actionable first. */
-  const conversations = computed<WebChatEntry[]>(() =>
-    clients.value
-      .flatMap((client) =>
-        client.conversations.map((conversation) => ({
+  /**
+   * Every conversation any live tab reports, as one entry each and most
+   * actionable first.
+   *
+   * The tabs all list the same project's conversations, so the same conversation
+   * arrives once per tab — three tabs with two conversations that want attention
+   * would otherwise make seven entries, which is what the menu would list and
+   * what the count would say. Folding them by id is what makes them mean "a
+   * conversation", and where two tabs disagree the most actionable reading wins:
+   * a permission one tab has seen and another has not is still a permission.
+   */
+  const conversations = computed<WebChatEntry[]>(() => {
+    const byID = new Map<string, WebChatEntry>()
+    for (const client of clients.value) {
+      for (const conversation of client.conversations) {
+        const entry: WebChatEntry = {
           id: conversation.id,
           title: conversation.title,
           project: conversation.project,
@@ -56,10 +67,25 @@ export function useWebChat() {
           reason: conversation.reason,
           client: client.client,
           link: linkTo(client.url, conversation.id),
-        })),
-      )
-      .sort((a, b) => STATE_PRECEDENCE.indexOf(a.state) - STATE_PRECEDENCE.indexOf(b.state)),
-  )
+        }
+        const seen = byID.get(entry.id)
+        if (!seen) {
+          byID.set(entry.id, entry)
+          continue
+        }
+        // Keep whichever reading is more actionable, and a link if either tab
+        // could build one.
+        const better = STATE_PRECEDENCE.indexOf(entry.state) < STATE_PRECEDENCE.indexOf(seen.state)
+        byID.set(entry.id, {
+          ...(better ? entry : seen),
+          link: seen.link ?? entry.link,
+        })
+      }
+    }
+    return [...byID.values()].sort(
+      (a, b) => STATE_PRECEDENCE.indexOf(a.state) - STATE_PRECEDENCE.indexOf(b.state),
+    )
+  })
 
   /** The tab as a whole, for the tray's left-hand dot. */
   const state = computed<ConversationState>(() =>
@@ -79,6 +105,13 @@ export function useWebChat() {
     for (const conversation of conversations.value) totals[conversation.state]++
     return totals
   })
+
+  /**
+   * How many conversations want the user: a blocked one, or a finished turn they
+   * have not looked at. This is the number the left dot carries, where studio's
+   * right dot carries its projects.
+   */
+  const attention = computed(() => counts.value.blocked + counts.value.done)
 
   let detach: (() => void) | null = null
 
@@ -107,7 +140,7 @@ export function useWebChat() {
       .catch(() => undefined)
   }
 
-  return { picture, clients, conversations, state, counts, open, start }
+  return { picture, clients, conversations, state, counts, open, attention, start }
 }
 
 export type WebChatStore = ReturnType<typeof useWebChat>

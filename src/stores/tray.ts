@@ -170,11 +170,10 @@ export function useTray() {
   async function push() {
     if (!bridge?.tray) return
     const rollup = state.trayRollup.value
-    const dataURL = await trayIconDataURL(
-      rollup.state as ConversationState,
-      rollup.attention,
-      webchat.state.value,
-    )
+    const dataURL = await trayIconDataURL(rollup.state as ConversationState, rollup.attention, {
+      state: webchat.state.value,
+      count: webchat.attention.value,
+    })
     await bridge.tray.update({
       dataURL,
       tooltip: tooltip.value,
