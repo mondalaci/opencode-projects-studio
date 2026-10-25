@@ -166,11 +166,13 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 }
 .tool-title {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
   font-family: var(--font-mono);
   color: var(--text-faint);
+  /* A long command wraps. An ellipsis would keep the row to one line, but it
+     hides the very thing worth reading, and letting the line run on gives the
+     conversation a horizontal scrollbar instead. */
+  overflow-wrap: anywhere;
 }
 .status {
   flex: none;

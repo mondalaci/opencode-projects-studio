@@ -504,6 +504,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* A flex item will not shrink below its content without this, so a long title
+     is not ellipsised — it pushes the header row wider than the window. */
+  min-width: 0;
   flex: 1;
 }
 .archived-pill {

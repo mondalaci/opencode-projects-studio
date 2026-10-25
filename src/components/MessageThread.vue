@@ -147,6 +147,11 @@ onMounted(() => {
 .thread {
   flex: 1;
   overflow-y: auto;
+  /* A conversation never scrolls sideways. Parts that are genuinely wider than
+     the column — a code block, a table, a diagram — carry their own scrollbar,
+     so anything left over is a line that failed to wrap: it should be clipped
+     rather than drag the whole conversation out of view. */
+  overflow-x: hidden;
   padding: 20px 20px 0;
   /* No `scroll-behavior: smooth`: the animation fires intermediate scroll
      events that re-pin the view to the bottom mid-follow, fighting a user who
