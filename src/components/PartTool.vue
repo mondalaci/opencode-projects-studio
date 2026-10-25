@@ -128,6 +128,10 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
   padding: 8px 12px;
   font-size: 12.5px;
   color: var(--text-muted);
+  /* The row's content is clipped at its own padding box, so a summary can never
+     be drawn across the card's border — it wraps, and this is the guarantee for
+     anything that would not. */
+  overflow: hidden;
 }
 .head:hover {
   background: var(--bg-hover);

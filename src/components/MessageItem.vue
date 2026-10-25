@@ -223,6 +223,9 @@ function isCompose(block: AssistantToolBlock): boolean {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-faint);
+  /* Clipped at its own padding box: the label fits and the preview ellipsises,
+     so this is what keeps anything that would not from crossing the border. */
+  overflow: hidden;
 }
 .notice-head:hover {
   color: var(--text-muted);
@@ -235,7 +238,14 @@ function isCompose(block: AssistantToolBlock): boolean {
   transform: rotate(90deg);
 }
 .notice-label {
-  flex: none;
+  /* Normally a word or two, but the server authors this string, and it can
+     arrive as a whole command: shrinkable and clipped like the preview, so a long
+     one is ellipsised inside the notice instead of being drawn out of it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
 }
 .notice-preview {
