@@ -503,6 +503,10 @@ log, because settings will not persist for that run.
   lands, and keeps a Submit button only when nothing on it can end the question (a
   multiple choice, or a step finished in a browser); `Alt`+`X` withdraws a question
   instead.
+- Links in a conversation (and anywhere else in the app) always open in the OS
+  browser, never inside the window: a left click, a middle click and a
+  `target="_blank"` all end up at `shell.openExternal`. A same-origin navigation
+  is let through, because a reload arrives as one.
 - If `ELECTRON_RUN_AS_NODE` is set in the environment, Electron behaves as plain
   Node; `npm run app:dev` clears it for the child process, and the main process
   exits with an explanatory message if it is still set.

@@ -12,6 +12,8 @@ const electron = require("electron")
 
 const git = require("./git.cjs")
 const files = require("./files.cjs")
+const opencodeDb = require("./opencode-db.cjs")
+const runtimeConfig = require("./runtime-config.cjs")
 const { createTrayManager } = require("./tray.cjs")
 const { startStaticServer } = require("./static-server.cjs")
 const { createStatusServer } = require("./status-server.cjs")
@@ -31,6 +33,12 @@ const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell } = electr
 
 const ROOT = path.join(__dirname, "..")
 const DIST = path.join(ROOT, "dist")
+/**
+ * The runtime config the renderer reads at the site root, and the one file the
+ * sidebar's Hide/Unhide actions write. It is the same file in development (Vite
+ * serves `public/`) and in production, so both runs see the same hidden list.
+ */
+const CONFIG_FILE = path.join(ROOT, "public", "opencode-projects-studio.json")
 /** The app icon: the "OCP studio" lockup, cut from build/icon-source.png. */
 const ICON = path.join(ROOT, "build", "icon.png")
 /**
@@ -208,6 +216,17 @@ function registerIpc() {
   ipcMain.handle("files:list", (_event, dir) => files.list(dir))
   ipcMain.handle("files:read", (_event, payload) => files.read(payload?.dir, payload?.path))
 
+  // The runtime config file: the sidebar reads and writes `hideProjects` here,
+  // because a browser page cannot write the file the static server serves.
+  ipcMain.handle("config:hidden-projects", () => runtimeConfig.hiddenProjects(CONFIG_FILE))
+  ipcMain.handle("config:set-hidden-projects", (_event, patterns) =>
+    runtimeConfig.setHiddenProjects(CONFIG_FILE, patterns),
+  )
+
+  // Deleting a project has no HTTP API, so the main process removes it from
+  // opencode's own database. Local servers only: the database is on this machine.
+  ipcMain.handle("opencode:delete-project", (_event, projectID) => opencodeDb.deleteProject(projectID))
+
   // Window controls for the chromeless frame.
   ipcMain.handle("window:minimize", (event) => {
     senderWindow(event)?.minimize()
@@ -296,6 +315,15 @@ async function capture(window) {
   app.quit()
 }
 
+/** Whether two URLs share an origin; anything unparseable counts as foreign. */
+function sameOrigin(a, b) {
+  try {
+    return new URL(a).origin === new URL(b).origin
+  } catch {
+    return false
+  }
+}
+
 function createWindow(url) {
   const saved = CAPTURE_PATH ? null : loadWindowState()
   const bounds = usableBounds(saved)
@@ -332,6 +360,23 @@ function createWindow(url) {
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:\/\//i.test(target)) void shell.openExternal(target)
     return { action: "deny" }
+  })
+
+  /**
+   * A plain left click on a link, which arrives as `will-navigate`, would
+   * replace the app with the page. The app has no page of its own to navigate
+   * to, so an external link is sent to the OS browser instead — the destination a
+   * middle click already reaches through the handler above.
+   *
+   * A reload arrives here too, with the app's own URL, so same-origin
+   * navigations are left alone; that keeps the reload the dev server and the
+   * user's own `Ctrl`+`R` ask for working.
+   */
+  window.webContents.on("will-navigate", (event, target) => {
+    if (!/^https?:\/\//i.test(target)) return
+    if (sameOrigin(target, window.webContents.getURL())) return
+    event.preventDefault()
+    void shell.openExternal(target)
   })
 
   window.webContents.on("did-fail-load", (_event, code, description, validatedURL) => {
