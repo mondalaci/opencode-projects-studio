@@ -16,9 +16,11 @@ conversations:
   conversation: its newest. The list is ordered by most recent activity, and the
   newest conversation of the busiest project is what opens on launch. The
   chevron on a project row expands it to list that project's conversations
-  (newest first); `Alt`+`L` toggles the current project's row. The header's
-  archive button opens the archived conversations page, grouped by project.
-  Clicking one opens it in the conversation pane, read-only, so it can be
+  (newest first); `Alt`+`L` toggles the current project's row. Each row's `⋯`
+  menu hides the project or deletes it for good (behind a confirmation), and a
+  **Hidden** section folds away at the bottom of the list to bring one back. The
+  header's archive button opens the archived conversations page, grouped by
+  project. Clicking one opens it in the conversation pane, read-only, so it can be
   reviewed before being restored or permanently deleted.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
@@ -110,6 +112,20 @@ directory (when it does); `*` matches any run of characters except `/`, and `**`
 matches any run including `/`. Hidden projects still exist on the server — they
 are only omitted from this app's list, and matching is case-sensitive.
 
+The sidebar's **Hide project** action appends a project's canonical directory to
+this list, and **Unhide project** removes whichever entries match it, so the file
+can be managed from the UI as well as by hand. Writing needs the desktop app (a
+browser page cannot touch the file the static server serves); in a browser the
+actions are disabled and the served list is still honoured.
+
+Deleting a project is a different thing: opencode's HTTP API has no delete, so
+**Delete project…** removes the project's row — and, by the schema's cascades,
+its conversations, messages, parts, todos and event aggregates — from the local
+opencode database (`~/.local/share/opencode/opencode.db`, or `$OPENCODE_DB`).
+`GET /api/project` reads that table directly, so the project is gone from the
+list immediately; only other clients that cached it keep it until they reload.
+opencode's `global` placeholder project cannot be deleted.
+
 Conversation search (`Alt`+`F`) uses the shared
 [**opencode-search**](https://github.com/mondalaci/opencode-search) service (a
 small Bun FTS5/BM25 index over message text, listening on `127.0.0.1:27184`)
@@ -137,6 +153,8 @@ electron/
   main.cjs           Main process: window, IPC registration, capture helper
   preload.cjs        contextBridge surface exposed as window.opencodeDesktop
   git.cjs            Git plumbing: repo detection, status, diff, stage/unstage
+  opencode-db.cjs    Project deletion, straight in opencode's own SQLite database
+  runtime-config.cjs Read/write of opencode-projects-studio.json (hideProjects)
   static-server.cjs  Loopback static server for the production build
 build/
   icon-source.png    1024×1024 master of the app icon: opencode's own "oc"
@@ -153,6 +171,7 @@ scripts/
 src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   api/desktop.ts     Typed access to the preload bridge
   stores/projects.ts One conversation per project, plus its expanded chat list
+  stores/hiddenProjects.ts  The hidden-project list, read and written through the runtime config
   stores/archive.ts  Archived conversations, grouped by project, for viewing, restoring or deleting
   stores/git.ts      Source-control state: status polling, selection, diffs
   stores/layout.ts   Source-control panel width
@@ -161,7 +180,9 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
   components/
     ProjectsPanel.vue     Projects sidebar (expandable into per-project chats)
+    ProjectMenu.vue       Hide / unhide / delete actions of one project row
     ConversationMenu.vue  Rename / archive actions of one conversation row
+    ConfirmDialog.vue     Modal confirmation before a project is deleted
     ArchivePanel.vue      Archived conversations, grouped by project: click to view, plus restore and delete
     SourceControl.vue     Right-hand source-control panel (flat, full paths)
     DiffViewer.vue        Split/unified diff view
@@ -465,6 +486,11 @@ log, because settings will not persist for that run.
   permanently deleted from the header's archive button. Clicking an archived
   conversation opens it read-only — its composer is replaced by a notice — so it
   can be reviewed before deciding; deleting asks for confirmation on the row.
+- Each project row carries its own `⋯` menu: **Hide** keeps it out of the sidebar
+  by adding it to the runtime config's `hideProjects`, **Unhide** (in the Hidden
+  section at the bottom of the list) takes it back out, and **Delete** removes it
+  and all of its conversations from opencode's database after a confirmation.
+  Hiding is a studio-side view; deleting is real, and cannot be undone.
 - The diff viewer renders text patches; binary changes are reported as such.
 - Requires `git` on `PATH` for the source-control panel.
 - The v2 API has no per-message tool toggles or session sharing, so the tools

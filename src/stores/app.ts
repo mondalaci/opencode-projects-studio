@@ -1,4 +1,5 @@
 import type { Credentials } from "@/api/client"
+import { desktopBridge } from "@/api/desktop"
 import type { InstanceInfo } from "@/api/discovery"
 import { sessionDirectory, type SessionInfo } from "@/api/types"
 import { useArchive } from "./archive"
@@ -7,9 +8,10 @@ import { useConnection } from "./connection"
 import { draft, requestComposerFocus } from "./draft"
 import { useFileViewer } from "./fileViewer"
 import { useFiles } from "./files"
+import { useHiddenProjects } from "./hiddenProjects"
 import { useSessionState } from "./sessionState"
 import { useLive } from "./live"
-import { useProjects } from "./projects"
+import { useProjects, type ProjectEntry } from "./projects"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
 import {
@@ -31,6 +33,7 @@ export function useApp() {
   const fileViewer = useFileViewer()
   const sessionState = useSessionState()
   const archive = useArchive()
+  const hidden = useHiddenProjects()
 
   /** Load the conversation list and event stream for the current project. */
   async function loadScoped(client: NonNullable<typeof connection.client.value>) {
@@ -48,6 +51,7 @@ export function useApp() {
     fileViewer.close()
     sessionState.reset()
     archive.reset()
+    hidden.reset()
 
     server.applySavedPrefs(info.origin)
 
@@ -58,6 +62,9 @@ export function useApp() {
     try {
       const origin = connection.connected.value?.origin ?? info.origin
       await server.load(client, origin, server.savedDirectory(origin))
+      // The hidden list decides which rows the sidebar shows, so it is read
+      // before anything picks a project to open.
+      await hidden.load()
 
       // One conversation per project: fetch each project's newest conversation
       // so the sidebar can open on the most recent one by default.
@@ -81,6 +88,7 @@ export function useApp() {
       projects.reset()
       server.reset()
       archive.reset()
+      hidden.reset()
       connection.disconnect()
       connection.connectError.value = error instanceof Error ? error.message : String(error)
       return false
@@ -97,6 +105,7 @@ export function useApp() {
     fileViewer.close()
     sessionState.reset()
     archive.reset()
+    hidden.reset()
     connection.disconnect()
   }
 
@@ -195,6 +204,57 @@ export function useApp() {
     // A single project wraps onto itself; reopening it would only reset focus.
     if (target === server.directory.value) return
     await openProject(target)
+  }
+
+  /**
+   * Move the app off a project it is about to stop showing.
+   *
+   * Any request scoped to a directory makes the server resolve — and so create —
+   * that project, so the app must not keep pointing at one that has just been
+   * deleted. Switching to the next visible project first, or to nothing at all,
+   * is what keeps the row from coming straight back.
+   */
+  async function leaveProject(directory: string) {
+    if (server.directory.value !== directory) return
+    live.stop()
+    chat.reset()
+    sessions.reset()
+    fileViewer.close()
+    const next = projects.entries.value.find((entry) => entry.directory !== directory)
+    if (next) await openProject(next.directory)
+    else server.clearProject()
+  }
+
+  /** Keep a project out of the sidebar, moving off it when it is the open one. */
+  async function hideProject(entry: ProjectEntry) {
+    const result = await hidden.hide(entry.directory)
+    if (result.ok) await leaveProject(entry.directory)
+    return result
+  }
+
+  /** Show a hidden project in the sidebar again. */
+  function unhideProject(directory: string) {
+    return hidden.unhide(directory)
+  }
+
+  /**
+   * Delete a project and everything it owns.
+   *
+   * opencode has no endpoint for this, so the desktop app removes the row from
+   * its own database (see electron/opencode-db.cjs). The project is left before
+   * the delete, because a request scoped to its directory would recreate it.
+   */
+  async function deleteProject(entry: ProjectEntry) {
+    const bridge = desktopBridge()
+    if (!bridge?.opencode) return { ok: false, error: "Deleting a project needs the desktop app." }
+
+    await leaveProject(entry.directory)
+    const result = await bridge.opencode.deleteProject(entry.project.id)
+    if (!result.ok) return result
+
+    server.removeProject(entry.directory)
+    projects.forgetProject(entry.directory)
+    return result
   }
 
   async function newChat() {
@@ -368,6 +428,7 @@ export function useApp() {
     sessions,
     projects,
     archive,
+    hidden,
     sessionState,
     chat,
     live,
@@ -377,6 +438,9 @@ export function useApp() {
     switchProject,
     openProject,
     cycleProject,
+    hideProject,
+    unhideProject,
+    deleteProject,
     openSessionByID,
     openInitialSession,
     newChat,

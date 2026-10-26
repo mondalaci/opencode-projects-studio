@@ -159,6 +159,36 @@ export interface DesktopFilesApi {
   read(request: { dir: string; path: string }): Promise<FileReadResult>
 }
 
+/** The result of writing to the runtime config file. */
+export interface ConfigWriteResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * The studio's runtime config file (`opencode-projects-studio.json`).
+ *
+ * The renderer reads the file over HTTP in a browser, but only the desktop app
+ * can write it — a page cannot touch the file a static server serves — so the
+ * sidebar's Hide/Unhide actions go through here.
+ */
+export interface DesktopConfigApi {
+  /** The `hideProjects` patterns as stored. */
+  hiddenProjects(): Promise<string[]>
+  /** Replace `hideProjects`, keeping every other key in the file. */
+  setHiddenProjects(patterns: string[]): Promise<ConfigWriteResult>
+}
+
+/**
+ * opencode's own data, reached around its HTTP API.
+ *
+ * There is no project-delete endpoint, so the desktop app removes the project
+ * from the local opencode database directly.
+ */
+export interface DesktopOpencodeApi {
+  deleteProject(projectID: string): Promise<ConfigWriteResult>
+}
+
 /** One conversation as the web chat app reports it. */
 export interface WebChatConversation {
   id: string
@@ -236,6 +266,8 @@ export interface DesktopBridge {
     unstage(request: { dir: string; path: string }): Promise<GitOpResult>
   }
   files: DesktopFilesApi
+  config: DesktopConfigApi
+  opencode: DesktopOpencodeApi
   tray: DesktopTrayApi
   webchat: DesktopWebChatApi
   shell: {
@@ -261,6 +293,16 @@ export function desktopBridge(): DesktopBridge | undefined {
 /** Whether git-backed features are available in this runtime. */
 export function gitAvailable(): boolean {
   return Boolean(desktopBridge()?.git)
+}
+
+/** Whether the runtime config file can be written (the desktop app, not a browser). */
+export function configWritable(): boolean {
+  return Boolean(desktopBridge()?.config)
+}
+
+/** Whether a project can be deleted, which needs opencode's local database. */
+export function projectDeleteAvailable(): boolean {
+  return Boolean(desktopBridge()?.opencode)
 }
 
 /** Whether the window draws its own title bar (no OS decoration). */

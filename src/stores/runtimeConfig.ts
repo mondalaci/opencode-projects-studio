@@ -7,8 +7,11 @@
  * invalid file is treated as an empty config, so the app keeps its defaults.
  *
  * Currently it carries `hideProjects`, the pattern list that keeps projects out
- * of the sidebar.
+ * of the sidebar. The sidebar's Hide/Unhide actions write that list through the
+ * desktop bridge, since a browser cannot write the served file.
  */
+import { desktopBridge } from "@/api/desktop"
+
 export interface RuntimeConfig {
   /**
    * Projects to omit from the sidebar. Each entry matches either the project's
@@ -81,4 +84,35 @@ export function loadRuntimeConfig(): Promise<RuntimeConfig> {
       .then(normalizeConfig)
   }
   return pending
+}
+
+/**
+ * The `hideProjects` list, from wherever it can actually be read.
+ *
+ * The desktop app reads the file itself, so what it wrote is what it sees; a
+ * browser falls back to the copy served at the site root, which is read-only.
+ */
+export async function loadHiddenProjects(): Promise<string[]> {
+  const bridge = desktopBridge()
+  if (bridge?.config) {
+    try {
+      return await bridge.config.hiddenProjects()
+    } catch {
+      /* fall through to the served file */
+    }
+  }
+  const config = await loadRuntimeConfig()
+  return config.hideProjects ?? []
+}
+
+/**
+ * Replace the `hideProjects` list in the config file.
+ *
+ * Only the desktop app can write the file the static server is reading, so a
+ * browser reports the failure instead of pretending the change stuck.
+ */
+export async function saveHiddenProjects(patterns: string[]): Promise<{ ok: boolean; error?: string }> {
+  const bridge = desktopBridge()
+  if (!bridge?.config) return { ok: false, error: "Hiding projects needs the desktop app." }
+  return bridge.config.setHiddenProjects(patterns)
 }

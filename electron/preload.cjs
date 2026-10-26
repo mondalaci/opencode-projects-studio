@@ -37,6 +37,20 @@ const filesApi = {
   read: (request) => ipcRenderer.invoke("files:read", request),
 }
 
+/** The runtime config file the sidebar's Hide/Unhide actions read and write. */
+const configApi = {
+  hiddenProjects: () => ipcRenderer.invoke("config:hidden-projects"),
+  setHiddenProjects: (patterns) => ipcRenderer.invoke("config:set-hidden-projects", patterns),
+}
+
+/**
+ * opencode's own data, which its HTTP API does not expose. Deleting a project
+ * removes its row from the local opencode database; there is no endpoint for it.
+ */
+const opencodeApi = {
+  deleteProject: (projectID) => ipcRenderer.invoke("opencode:delete-project", projectID),
+}
+
 /** Window controls, since the frame is chromeless and draws its own. */
 const windowApi = {
   minimize: () => ipcRenderer.invoke("window:minimize"),
@@ -99,6 +113,8 @@ contextBridge.exposeInMainWorld("opencodeDesktop", {
   platform: process.platform,
   git,
   files: filesApi,
+  config: configApi,
+  opencode: opencodeApi,
   tray: trayApi,
   webchat: webchatApi,
   shell: shellApi,

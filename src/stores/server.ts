@@ -11,7 +11,6 @@ import type {
   ProviderInfo,
   ServerConfig,
 } from "@/api/types"
-import { isProjectHidden, loadRuntimeConfig } from "./runtimeConfig"
 
 const PREFS_KEY = "opencode-projects-studio.prefs"
 
@@ -209,22 +208,21 @@ export function useServer() {
       locationInfo.value = location
       selectedDirectory.value = dir ?? null
 
-      const [cfg, agentList, providerList, modelList, projectList, commandList, runtimeConfig] = await Promise.all([
+      const [cfg, agentList, providerList, modelList, projectList, commandList] = await Promise.all([
         client.config({ directory: dir }).catch(() => null),
         client.agents({ directory: dir }).catch(() => [] as AgentInfo[]),
         client.providers({ directory: dir }).catch(() => [] as ProviderInfo[]),
         client.models({ directory: dir }).catch(() => [] as ModelInfo[]),
         client.projects().catch(() => [] as ProjectInfo[]),
         client.commands({ directory: dir }).catch(() => [] as CommandInfo[]),
-        loadRuntimeConfig(),
       ])
       config.value = cfg
       agents.value = agentList
       providers.value = providerList
       models.value = modelList
-      projects.value = projectList.filter(
-        (project) => !isProjectHidden(project.canonical, runtimeConfig.hideProjects),
-      )
+      // Kept whole: the sidebar decides what to show, because hiding a project
+      // has to be reversible without a refetch.
+      projects.value = projectList
       commands.value = commandList
       // Don't clobber the current agent/model when only switching project.
       if (changedOrigin || !selectedModel.value) applyDefaults()
@@ -266,6 +264,30 @@ export function useServer() {
     selectedDirectory.value = null
     selectedModel.value = null
     selectedImageModel.value = null
+  }
+
+  /**
+   * Drop a project from the known list after it has been deleted.
+   *
+   * The row is gone from the server's database, but this keeps the sidebar from
+   * asking about it again in the meantime — and, more importantly, keeps any
+   * request scoped to its directory from making the server resolve (and so
+   * recreate) it.
+   */
+  function removeProject(canonical: string) {
+    projects.value = projects.value.filter((project) => project.canonical !== canonical)
+  }
+
+  /**
+   * Forget which project is open, for when the last one is gone.
+   *
+   * The location has to go too: it names the directory of the last request, and
+   * leaving it in place would make the very next instance-scoped request resolve
+   * — and so recreate — the project that was just deleted.
+   */
+  function clearProject() {
+    selectedDirectory.value = null
+    locationInfo.value = null
   }
 
   function setModel(model: ModelRef) {
@@ -323,6 +345,8 @@ export function useServer() {
     savedDirectory,
     applySavedPrefs,
     reset,
+    removeProject,
+    clearProject,
     setModel,
     setVariant,
     setImageModel,

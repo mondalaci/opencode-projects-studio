@@ -1,6 +1,7 @@
 import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
 import { sessionDirectory, type ProjectInfo, type SessionInfo } from "@/api/types"
+import { useHiddenProjects } from "./hiddenProjects"
 import { useServer } from "./server"
 
 /**
@@ -77,9 +78,10 @@ async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Pr
 
 export function useProjects() {
   const { projects, directory } = useServer()
+  const hidden = useHiddenProjects()
 
-  /** Projects sorted by activity, each with its newest conversation. */
-  const entries = computed<ProjectEntry[]>(() =>
+  /** Every known project, sorted by activity, each with its newest conversation. */
+  const allEntries = computed<ProjectEntry[]>(() =>
     [...projects.value]
       .map((project) => ({
         directory: project.canonical,
@@ -93,6 +95,16 @@ export function useProjects() {
         if (aTime !== bTime) return bTime - aTime
         return a.name.localeCompare(b.name)
       }),
+  )
+
+  /** The projects the sidebar lists — every known project but the hidden ones. */
+  const entries = computed<ProjectEntry[]>(() =>
+    allEntries.value.filter((entry) => !hidden.isHidden(entry.directory)),
+  )
+
+  /** The projects the sidebar keeps out of the way, for the Hidden section. */
+  const hiddenEntries = computed<ProjectEntry[]>(() =>
+    allEntries.value.filter((entry) => hidden.isHidden(entry.directory)),
   )
 
   /** The entry whose conversation changed most recently, if any. */
@@ -151,6 +163,21 @@ export function useProjects() {
       }
     }
     if (changed) chats.value = next
+  }
+
+  /** Forget everything cached for a project that no longer exists. */
+  function forgetProject(directory: string) {
+    if (directory in latest.value) {
+      const next = { ...latest.value }
+      delete next[directory]
+      latest.value = next
+    }
+    if (directory in chats.value) {
+      const next = { ...chats.value }
+      delete next[directory]
+      chats.value = next
+    }
+    collapse(directory)
   }
 
   /** Whether a project row is showing its conversation list. */
@@ -287,6 +314,7 @@ export function useProjects() {
 
   return {
     entries,
+    hiddenEntries,
     mostRecent,
     latest,
     loading,
@@ -298,6 +326,7 @@ export function useProjects() {
     latestFor,
     setLatest,
     forgetChat,
+    forgetProject,
     isExpanded,
     chatsFor,
     isChatsLoading,

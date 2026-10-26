@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue"
-import { Folder, MessageSquare, ChevronRight } from "lucide-vue-next"
+import { ChevronRight, Eye, Folder } from "lucide-vue-next"
+import ConfirmDialog from "./ConfirmDialog.vue"
 import ConversationMenu from "./ConversationMenu.vue"
 import FilterBar from "./FilterBar.vue"
+import ProjectMenu from "./ProjectMenu.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import Spinner from "./Spinner.vue"
 import type { SessionInfo } from "@/api/types"
+import { projectDeleteAvailable } from "@/api/desktop"
 import { useApp } from "@/stores/app"
 import { requestComposerFocus } from "@/stores/draft"
 import { filterTarget, stopFilter } from "@/stores/filter"
@@ -16,9 +19,72 @@ import { relativeTime } from "@/utils/format"
 import { fuzzyMatch } from "@/utils/fuzzy"
 
 const app = useApp()
-const { entries, loading, pending, current, isExpanded, chatsFor, isChatsLoading, toggleExpanded } = app.projects
-const { openProject, archiveSession, renameSession, selectSession, switchProject } = app
+const { entries, hiddenEntries, loading, pending, current, isExpanded, chatsFor, isChatsLoading, toggleExpanded } =
+  app.projects
+const { openProject, archiveSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
+  app
 const { stateFor, reasonFor } = useSessionState()
+const { writable: hiddenWritable, error: hiddenError } = app.hidden
+
+/** Whether the sidebar can hide projects, and whether it can delete them. */
+const canHide = hiddenWritable
+const canDelete = projectDeleteAvailable()
+
+/**
+ * Why a project cannot be deleted, or `undefined` when it can.
+ *
+ * opencode's `global` placeholder collects the conversations of directories it
+ * cannot identify, and the server recreates it on demand, so it is never removed.
+ */
+function deleteDisabledReason(entry: ProjectEntry): string | undefined {
+  if (entry.project.id === "global") return "The global project cannot be deleted"
+  if (!canDelete) return "Deleting a project needs the desktop app"
+  return undefined
+}
+
+/** Whether the Hidden section below the list is open. */
+const hiddenOpen = ref(false)
+
+/** The project a delete confirmation is open for, if any. */
+const pendingDelete = ref<ProjectEntry | null>(null)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
+
+function askDelete(entry: ProjectEntry) {
+  deleteError.value = null
+  pendingDelete.value = entry
+}
+
+function cancelDelete() {
+  if (deleting.value) return
+  pendingDelete.value = null
+  deleteError.value = null
+}
+
+async function confirmDelete() {
+  const entry = pendingDelete.value
+  if (!entry || deleting.value) return
+  deleting.value = true
+  deleteError.value = null
+  try {
+    const result = await deleteProject(entry)
+    if (!result.ok) {
+      deleteError.value = result.error ?? "Could not delete the project."
+      return
+    }
+    pendingDelete.value = null
+  } catch (cause) {
+    deleteError.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    deleting.value = false
+  }
+}
+
+const deleteMessage = computed(() => {
+  const entry = pendingDelete.value
+  if (!entry) return ""
+  return `This removes ${entry.name} (${entry.directory}) and every conversation in it from opencode. It cannot be undone.`
+})
 
 /** The conversation whose title is being edited inline, and its project. */
 const editing = ref<{ id: string; directory: string } | null>(null)
@@ -151,6 +217,16 @@ function toggleChats(entry: ProjectEntry) {
 /** The conversations shown under an expanded row (all of them, newest first). */
 function projectChats(entry: ProjectEntry) {
   return chatsFor(entry.directory)
+}
+
+/** Keep a project out of the sidebar; the store reports a failure in `hiddenError`. */
+function hide(entry: ProjectEntry) {
+  void hideProject(entry)
+}
+
+/** Bring a hidden project back into the list. */
+function unhide(entry: ProjectEntry) {
+  void unhideProject(entry.directory)
 }
 
 /** Open one conversation, switching to its project first when it lives elsewhere. */
@@ -302,6 +378,15 @@ function onKeydown(event: KeyboardEvent) {
              the window. -->
         <ShortcutBadge v-if="isActive(entry)" modifier="alt" key-label="L" />
 
+        <!-- The project's own actions sit on the name line; the collapsed row's
+             conversation actions sit on the conversation line below. -->
+        <ProjectMenu
+          :can-hide="canHide"
+          :delete-disabled-reason="deleteDisabledReason(entry)"
+          @hide="hide(entry)"
+          @delete="askDelete(entry)"
+        />
+
         <button class="project-hit" @click="openProject(entry.directory)">
           <span class="line">
             <Folder :size="13" class="folder" />
@@ -380,7 +465,49 @@ function onKeydown(event: KeyboardEvent) {
       <p v-if="!filtered.length && !loading" class="empty">
         {{ query ? `Nothing matches “${query}”.` : "No projects." }}
       </p>
+
+      <!-- Hidden projects keep their place without taking one: the section lists
+           them so a row can be brought back or deleted for good. -->
+      <section v-if="hiddenEntries.length && !query" class="hidden-section">
+        <button class="hidden-head" :aria-expanded="hiddenOpen" @click="hiddenOpen = !hiddenOpen">
+          <ChevronRight :size="13" class="hidden-chevron" :class="{ open: hiddenOpen }" />
+          <Eye :size="12" />
+          <span class="hidden-label">Hidden</span>
+          <span class="hidden-count">{{ hiddenEntries.length }}</span>
+        </button>
+        <div v-if="hiddenOpen" class="hidden-list">
+          <div v-for="entry in hiddenEntries" :key="entry.directory" class="project hidden-project" :title="entry.directory">
+            <ProjectMenu
+              hidden
+              :can-hide="canHide"
+              :delete-disabled-reason="deleteDisabledReason(entry)"
+              @unhide="unhide(entry)"
+              @delete="askDelete(entry)"
+            />
+            <button class="project-hit" :title="`Unhide ${entry.name}`" @click="unhide(entry)">
+              <span class="line">
+                <Folder :size="13" class="folder" />
+                <span class="name">{{ entry.name }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <p v-if="hiddenError" class="hidden-error">{{ hiddenError }}</p>
     </nav>
+
+    <ConfirmDialog
+      :open="Boolean(pendingDelete)"
+      title="Delete project?"
+      :message="deleteMessage"
+      confirm-label="Delete"
+      danger
+      :busy="deleting"
+      :error="deleteError"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    />
   </div>
 </template>
 
@@ -600,6 +727,15 @@ function onKeydown(event: KeyboardEvent) {
 .chat:hover :deep(.conversation-menu) {
   opacity: 1;
 }
+/* A project row carries two menus: the project's own on the name line, and the
+   newest conversation's on the conversation line below it. */
+.project > :deep(.conversation-menu) {
+  top: auto;
+  bottom: 5px;
+}
+.project:hover > :deep(.project-menu) {
+  opacity: 1;
+}
 /* Chat rows are shorter than the project row, so center the button on them. */
 .chat :deep(.conversation-menu) {
   top: 50%;
@@ -610,5 +746,59 @@ function onKeydown(event: KeyboardEvent) {
   padding: 22px 6px;
   font-size: 12.5px;
   color: var(--text-faint);
+}
+/* The Hidden section folds away under the list; its rows are project rows too. */
+.hidden-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.hidden-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.hidden-head:hover {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.hidden-chevron {
+  flex: none;
+  transition: transform 0.12s ease;
+}
+.hidden-chevron.open {
+  transform: rotate(90deg);
+}
+.hidden-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.hidden-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.hidden-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hidden-project .name {
+  color: var(--text-muted);
+}
+.hidden-error {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--git-deleted);
 }
 </style>
