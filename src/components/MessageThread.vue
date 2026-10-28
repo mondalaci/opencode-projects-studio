@@ -147,6 +147,7 @@ onMounted(() => {
         :message="message"
         :streaming="message.id === lastAssistantID && message.type === 'assistant' && !message.time?.completed"
         :caret="message.id === streamingTextID"
+        :latest="message.id === lastAssistantID"
       />
     </template>
 

@@ -3,19 +3,28 @@ import { computed, ref } from "vue"
 import { ChevronRight, User } from "lucide-vue-next"
 import type { AssistantBlock, AssistantReasoningBlock, AssistantToolBlock, SessionMessage } from "@/api/types"
 import { formatCost, formatDateTime, formatTokens } from "@/utils/format"
+import { endedAtOutputLimit } from "@/utils/truncation"
 import { composedMessage } from "@/utils/compose"
 import { heldModifier } from "@/stores/shortcuts"
 import { useServer } from "@/stores/server"
+import { useApp } from "@/stores/app"
 import Markdown from "./Markdown.vue"
 import PartFile from "./PartFile.vue"
 import PartMessageCompose from "./PartMessageCompose.vue"
 import PartReasoning from "./PartReasoning.vue"
 import PartTool from "./PartTool.vue"
 
-const props = defineProps<{ message: SessionMessage; streaming?: boolean; caret?: boolean }>()
+const props = defineProps<{
+  message: SessionMessage
+  streaming?: boolean
+  caret?: boolean
+  /** The newest assistant message, the only one a "Continue" makes sense on. */
+  latest?: boolean
+}>()
 
 /** The model list, for naming the model a message ran on. */
 const { models } = useServer()
+const app = useApp()
 
 const isUser = computed(() => props.message.type === "user")
 const isAssistant = computed(() => props.message.type === "assistant")
@@ -70,6 +79,26 @@ const retryNote = computed(() => {
   if (props.message.type !== "assistant" || !props.message.retry) return null
   return `Retrying (attempt ${props.message.retry.attempt})…`
 })
+
+/**
+ * Whether this is the newest assistant message and its step ended on an output
+ * limit, so what the reader sees is the model being cut off rather than the
+ * model stopping. A fresh turn is the only way to get the rest of the text, so
+ * the bar is shown only where that makes sense: the last reply, settled, with no
+ * error of its own and no turn already running.
+ */
+const truncated = computed(() => {
+  if (props.message.type !== "assistant") return false
+  if (!props.latest || props.streaming || errorMessage.value) return false
+  if (app.chat.isBusy.value || app.chat.awaitingUser.value) return false
+  return endedAtOutputLimit(props.message.finish, props.message.rawFinish)
+})
+
+/** Ask the model to carry on; the composer's own send path, on the same model. */
+async function continueReply(): Promise<void> {
+  if (props.message.type !== "assistant") return
+  await app.continueReply(props.message)
+}
 
 /**
  * The model a message ran on, as the picker named it, with the effort beside it.
@@ -175,6 +204,10 @@ function isCompose(block: AssistantToolBlock): boolean {
 
       <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
       <div v-if="retryNote" class="retry">{{ retryNote }}</div>
+      <div v-if="truncated" class="truncated">
+        <span>This reply stopped at the model's output limit.</span>
+        <button type="button" class="truncated-continue" @click="continueReply">Continue</button>
+      </div>
     </div>
     <div v-if="isUser" class="avatar" aria-hidden="true"><User :size="15" /></div>
     <div v-if="meta && !streaming && heldModifier === 'alt'" class="meta" :title="meta.reference || meta.model">
@@ -368,6 +401,34 @@ function isCompose(block: AssistantToolBlock): boolean {
   font-size: 12px;
   color: var(--text-faint);
   font-family: var(--font-mono);
+}
+/* A reply the model was cut off on: a warning toned with the accent rather than
+   the error red, since nothing failed — there is just more to say. */
+.truncated {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.truncated-continue {
+  flex: none;
+  padding: 3px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.truncated-continue:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .meta {
   position: absolute;
