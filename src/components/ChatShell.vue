@@ -10,6 +10,7 @@ import Composer from "./Composer.vue"
 import McpDialog from "./McpDialog.vue"
 import PromptDock from "./PromptDock.vue"
 import FileViewer from "./FileViewer.vue"
+import FindBar from "./FindBar.vue"
 import ImageLightbox from "./ImageLightbox.vue"
 import { useApp } from "@/stores/app"
 import { useFileViewer } from "@/stores/fileViewer"
@@ -19,6 +20,7 @@ import { useTray } from "@/stores/tray"
 import { requestComposerFocus } from "@/stores/draft"
 import { requestOpen, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
 import { searchOpen, openSearch } from "@/stores/search"
+import { findOpen, openFind, closeFind } from "@/stores/find"
 import { applyScmWidth, scmWidth, setScmWidth } from "@/stores/layout"
 import { theme, toggleTheme } from "@/theme"
 import { formatConversationDate, formatConversationDateTime, formatCost } from "@/utils/format"
@@ -211,11 +213,25 @@ function onKeyDown(event: KeyboardEvent) {
   if (event.altKey) setHeldModifier("alt")
   else if (event.ctrlKey || event.metaKey) setHeldModifier("ctrl")
 
+  // Escape closes the find bar even after focus has left its field.
+  if (event.key === "Escape" && findOpen.value && !event.defaultPrevented) {
+    event.preventDefault()
+    closeFind()
+    return
+  }
+
   // The incremental searches use the familiar editor bindings: Ctrl+R filters
   // the projects sidebar, Ctrl+P the source-control list. Chromium's own Ctrl+R
   // reload and Ctrl+P print are not wanted here, and with no application menu
   // there is no accelerator keeping them alive.
   if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+    // Ctrl+F finds within the open conversation, the browser's own binding.
+    // The conversation search across sessions stays on Alt+F.
+    if (event.code === "KeyF") {
+      event.preventDefault()
+      openFind()
+      return
+    }
     // Ctrl+PageDown / Ctrl+PageUp walk the projects in sidebar order, the way the
     // same pair walks tabs elsewhere. A handler closer to the target (the
     // composer's slash menu) may already have claimed the key, so leave it be.
@@ -373,6 +389,8 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
+        <FindBar v-if="findOpen" />
+
         <MessageThread>
           <!-- Questions and permission cards belong to the conversation, so they
                follow the last message instead of sitting beside the composer. -->
@@ -472,6 +490,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  /* The find bar floats over the conversation, anchored to this pane. */
+  position: relative;
 }
 .topbar {
   position: relative;

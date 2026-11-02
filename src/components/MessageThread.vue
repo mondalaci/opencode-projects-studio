@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue"
 import MessageItem from "./MessageItem.vue"
 import Spinner from "./Spinner.vue"
 import { useChat } from "@/stores/chat"
+import { findOpen } from "@/stores/find"
 
 const { messages, loading, currentSessionID, scrollToBottomRequest, pendingForms, pendingPermissions, isBusy, awaitingUser } = useChat()
 
@@ -72,7 +73,10 @@ function onTouchMove(event: TouchEvent) {
 }
 
 async function scrollToBottom() {
-  if (!pinned.value) return
+  // While the find bar is open the reader is searching, not following the
+  // reply: pinning to the bottom would yank the view off whatever they jumped
+  // to. Resume following once the bar closes.
+  if (!pinned.value || findOpen.value) return
   await nextTick()
   const el = viewport.value
   if (!el || !pinned.value) return

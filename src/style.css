@@ -512,6 +512,21 @@ html[data-theme="dark"] .editor-code .hljs-tag {
   margin: 4px;
 }
 
+/*
+ * Find-in-conversation matches (Ctrl+F). The CSS Custom Highlight API paints
+ * ranges without wrapping them in elements, so the conversation's DOM is left
+ * untouched. The active match is registered second, which gives it priority
+ * where the two overlap.
+ */
+::highlight(studio-find) {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  color: inherit;
+}
+::highlight(studio-find-current) {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+
 /* Shortcut key badge shown while the modifier is held. */
 .kbd {
   font-family: var(--font-mono);

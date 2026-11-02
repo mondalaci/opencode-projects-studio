@@ -179,6 +179,7 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   stores/desktopWindow.ts  Maximized state for the chromeless frame
   stores/sessionState.ts   Conversation state for every project and the tray
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
+  stores/find.ts     Find-in-conversation state (Ctrl+F)
   components/
     ProjectsPanel.vue     Projects sidebar (expandable into per-project chats)
     ProjectMenu.vue       Hide / unhide / delete actions of one project row
@@ -189,6 +190,7 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
     DiffViewer.vue        Split/unified diff view
     FileViewer.vue        Read-only file view
     FilterBar.vue         The in-place sidebar filters (Ctrl+R, Ctrl+P)
+    FindBar.vue           Browser-style find bar over the open conversation (Ctrl+F)
     WindowControls.vue    Minimize / maximize / close for the frameless window
     WindowResizeHandles.vue  Edge grips, since a frameless window has no border
     ImageLightbox.vue     A conversation image, enlarged to the window
@@ -400,6 +402,7 @@ each badge names its own modifier, so a letter never appears next to the wrong o
 
 | Shortcut | Action |
 | --- | --- |
+| `Ctrl`+`F` | Find in the open conversation (browser-style find bar) |
 | `Ctrl`+`R` | Filter the projects sidebar in place |
 | `Ctrl`+`P` | Filter the changed files in the source-control panel in place |
 | `Alt`+`P` / `Alt`+`S` | Focus the projects list (arrow keys + `Enter`) |
@@ -415,6 +418,12 @@ The two filters narrow their list as you type (subsequences work: `kwchat` finds
 `kilo-web-chat`), `↑`/`↓` move the selection, `Enter` opens it and `Esc` clears
 it. `Ctrl`+`R` and `Ctrl`+`P` are Chromium's reload and print by default; both are
 taken over here, which is what the app's own shortcuts require.
+
+`Ctrl`+`F` opens a find bar over the open conversation and highlights every match
+in it, painting the active one in the solid accent colour. `Enter` and `Shift`+`Enter`
+walk forward and back — the thread scrolls smoothly to centre each one — and `Esc`
+closes the bar. Unlike `Alt`+`F`, which searches across conversations, this searches
+only the conversation on screen — the same way a browser's find works on a page.
 
 ## Reading a diff
 
