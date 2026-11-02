@@ -150,7 +150,8 @@ git clone https://github.com/mondalaci/opencode-search ../opencode-search
 
 ```
 electron/
-  main.cjs           Main process: window, IPC registration, capture helper
+  main.cjs           Main process: window, IPC registration, capture helper,
+                     native folder picker
   preload.cjs        contextBridge surface exposed as window.opencodeDesktop
   git.cjs            Git plumbing: repo detection, status, diff, stage/unstage
   opencode-db.cjs    Project deletion, straight in opencode's own SQLite database
@@ -491,6 +492,13 @@ log, because settings will not persist for that run.
   section at the bottom of the list) takes it back out, and **Delete** removes it
   and all of its conversations from opencode's database after a confirmation.
   Hiding is a studio-side view; deleting is real, and cannot be undone.
+- The sidebar header's folder-plus button **adds a project directory**: the
+  desktop app opens the OS folder picker, a browser asks for the absolute path by
+  hand. opencode has no "add project" call — a directory becomes a project the
+  moment a request is scoped to it — so the app resolves the directory with
+  `GET /api/location` (which registers it and answers with its canonical path),
+  then opens that row like any other, creating its first conversation if it has
+  none.
 - The diff viewer renders text patches; binary changes are reported as such.
 - Requires `git` on `PATH` for the source-control panel.
 - The v2 API has no per-message tool toggles or session sharing, so the tools

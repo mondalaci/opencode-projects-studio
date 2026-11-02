@@ -1,7 +1,7 @@
 import type { Credentials } from "@/api/client"
 import { desktopBridge } from "@/api/desktop"
 import type { InstanceInfo } from "@/api/discovery"
-import { sessionDirectory, type AssistantMessage, type SessionInfo } from "@/api/types"
+import { isRootDirectory, sessionDirectory, type AssistantMessage, type SessionInfo } from "@/api/types"
 import { useArchive } from "./archive"
 import { useChat } from "./chat"
 import { useConnection } from "./connection"
@@ -132,6 +132,9 @@ export function useApp() {
     const info = await client.getSession(sessionID).catch(() => null)
     if (!info) return false
     const directory = sessionDirectory(info)
+    // A conversation that lives in the root placeholder is not openable: opening
+    // it would make the app point at `/` and recreate the project.
+    if (isRootDirectory(directory)) return false
     if (directory && directory !== server.directory.value) await switchProject(directory)
     await selectSession(sessionID)
     return true
@@ -164,6 +167,8 @@ export function useApp() {
   async function switchProject(directory: string) {
     const client = connection.client.value
     if (!client) return
+    // The root is opencode's placeholder, not a project to point at.
+    if (isRootDirectory(directory)) return
     if (server.directory.value === directory) return
     live.stop()
     chat.reset()
@@ -252,9 +257,50 @@ export function useApp() {
     const result = await bridge.opencode.deleteProject(entry.project.id)
     if (!result.ok) return result
 
+    // If the deleted project was the remembered one, forget it, so a restart
+    // does not resolve — and so recreate — the directory it named.
+    if (server.savedDirectory(connection.connected.value?.origin ?? "") === entry.directory) {
+      server.clearSavedDirectory()
+    }
     server.removeProject(entry.directory)
     projects.forgetProject(entry.directory)
     return result
+  }
+
+  /**
+   * Add a project directory to the sidebar.
+   *
+   * opencode has no "add project" call: a directory becomes a project the moment
+   * a request is scoped to it, so resolving the picked directory registers it on
+   * the server. `GET /api/location` is the cheapest such request and answers with
+   * the project's canonical path — the key the sidebar lists rows under — which
+   * the app then opens like any other row.
+   *
+   * The desktop app asks the OS for the folder; in a browser the absolute path is
+   * typed by hand, since a page cannot open a native folder picker.
+   */
+  async function addProject(): Promise<{ ok: boolean; error?: string }> {
+    const client = connection.client.value
+    if (!client) return { ok: false, error: "Not connected to a server." }
+
+    const picker = desktopBridge()?.dialog
+    let directory: string | null = null
+    if (picker) {
+      directory = await picker.pickDirectory({ title: "Add project", buttonLabel: "Add project" })
+    } else if (typeof window !== "undefined") {
+      directory = window.prompt("Absolute path of the project directory:")?.trim() || null
+    }
+    // Cancelled (or nothing typed): not an error, and nothing to say.
+    if (!directory) return { ok: false }
+
+    const location = await client.location({ directory }).catch(() => null)
+    if (!location) return { ok: false, error: `opencode could not open ${directory}.` }
+    const canonical = location.project?.canonical || location.directory
+
+    // Opening the project reloads the server's project list, so the new row
+    // appears, and creates its first conversation when it has none.
+    await openProject(canonical)
+    return { ok: true }
   }
 
   async function newChat() {
@@ -471,6 +517,7 @@ export function useApp() {
     hideProject,
     unhideProject,
     deleteProject,
+    addProject,
     openSessionByID,
     openInitialSession,
     newChat,

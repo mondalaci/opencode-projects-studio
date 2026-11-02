@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { Archive, MessageSquarePlus, Search } from "lucide-vue-next"
+import { Archive, FolderPlus, MessageSquarePlus, Search } from "lucide-vue-next"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import iconUrl from "../../build/icon.png"
 import ProjectsPanel from "./ProjectsPanel.vue"
@@ -15,6 +15,27 @@ const { newChat, openArchive } = app
 
 /** How many projects the list holds; shown next to the header label. */
 const projectCount = computed(() => app.projects.entries.value.length)
+
+/** Whether an "Add project" pick is running, so the button cannot be double-fired. */
+const addingProject = ref(false)
+/** Why adding a project failed, shown under the header until dismissed. */
+const addError = ref<string | null>(null)
+
+/** Pick a directory and register it as a project, then open it. */
+async function addProject() {
+  if (addingProject.value) return
+  addingProject.value = true
+  addError.value = null
+  try {
+    const result = await app.addProject()
+    // A cancelled picker reports no error: there is nothing to say about it.
+    if (!result.ok && result.error) addError.value = result.error
+  } catch (cause) {
+    addError.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    addingProject.value = false
+  }
+}
 
 </script>
 
@@ -34,11 +55,16 @@ const projectCount = computed(() => app.projects.entries.value.length)
         <button class="icon" title="Archived conversations" @click="openArchive()">
           <Archive :size="16" />
         </button>
+        <button class="icon" title="Add project directory…" :disabled="addingProject" @click="addProject()">
+          <FolderPlus :size="16" />
+        </button>
         <button class="icon" title="New chat (Alt+N)" @click="newChat()">
           <MessageSquarePlus :size="17" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="N" />
         </button>
       </header>
+
+      <p v-if="addError" class="add-error" title="Dismiss" @click="addError = null">{{ addError }}</p>
 
       <ProjectsPanel />
     </template>
@@ -108,5 +134,20 @@ const projectCount = computed(() => app.projects.entries.value.length)
 .icon:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+.icon:disabled {
+  opacity: 0.5;
+}
+/* The "Add project" failure stays under the header until it is dismissed. */
+.add-error {
+  flex: none;
+  margin: 0 8px 6px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  color: var(--git-deleted);
+  background: color-mix(in srgb, var(--git-deleted) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--git-deleted) 30%, transparent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 </style>

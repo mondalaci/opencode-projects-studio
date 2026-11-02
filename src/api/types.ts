@@ -352,6 +352,19 @@ export interface ProjectInfo {
   sandboxes?: string[]
 }
 
+/**
+ * The root directory, which opencode hands back as a project (`global`) even
+ * though it is only a placeholder for a directory it cannot identify. Any
+ * request scoped to `/` makes the server resolve — and so materialize — a second
+ * ordinary project for it, so the studio treats `/` as "not a project".
+ */
+export const ROOT_DIRECTORY = "/"
+
+/** Whether a directory is opencode's root placeholder rather than a project. */
+export function isRootDirectory(directory: string | null | undefined): boolean {
+  return directory === ROOT_DIRECTORY
+}
+
 /** The directory a project lives in. */
 export function projectDirectory(project: ProjectInfo): string {
   return project.canonical

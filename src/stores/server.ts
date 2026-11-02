@@ -1,6 +1,7 @@
 import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
 import { normalizeOrigin } from "@/api/discovery"
+import { isRootDirectory } from "@/api/types"
 import type {
   AgentInfo,
   CommandInfo,
@@ -199,6 +200,9 @@ export function useServer() {
     selectedImageModel.value = saved.imageModel ?? null
 
     try {
+      // Never scope a request to `/`: opencode would resolve — and so create —
+      // a project for it, which is exactly the stray "root" the sidebar hides.
+      if (isRootDirectory(directory)) directory = undefined
       let location = directory ? await client.location({ directory }).catch(() => null) : null
       let dir = directory && location ? directory : undefined
       if (!dir || !location) {
@@ -244,12 +248,26 @@ export function useServer() {
   }
 
   function setDirectory(dir: string) {
+    // `/` is never a project the app should point at; persisting it would make
+    // the next startup resolve — and so recreate — opencode's root project.
+    if (isRootDirectory(dir)) return
     selectedDirectory.value = dir
     const key = origin.value
     if (key) {
       prefs.value = { ...prefs.value, [key]: { ...prefs.value[key], directory: dir } }
       persistPrefs()
     }
+  }
+
+  /** Drop the remembered directory, so a deleted project is not restored. */
+  function clearSavedDirectory() {
+    const key = origin.value
+    if (!key) return
+    const current = prefs.value[key]
+    if (!current?.directory) return
+    const { directory: _drop, ...rest } = current
+    prefs.value = { ...prefs.value, [key]: rest }
+    persistPrefs()
   }
 
   function reset() {
@@ -283,11 +301,13 @@ export function useServer() {
    *
    * The location has to go too: it names the directory of the last request, and
    * leaving it in place would make the very next instance-scoped request resolve
-   * — and so recreate — the project that was just deleted.
+   * — and so recreate — the project that was just deleted. The remembered
+   * directory goes with it, for the same reason, one startup later.
    */
   function clearProject() {
     selectedDirectory.value = null
     locationInfo.value = null
+    clearSavedDirectory()
   }
 
   function setModel(model: ModelRef) {
@@ -343,6 +363,7 @@ export function useServer() {
     load,
     setDirectory,
     savedDirectory,
+    clearSavedDirectory,
     applySavedPrefs,
     reset,
     removeProject,

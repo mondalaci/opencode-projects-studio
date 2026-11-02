@@ -29,7 +29,7 @@ if (!electron?.app) {
   process.exit(1)
 }
 
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell } = electron
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell } = electron
 
 const ROOT = path.join(__dirname, "..")
 const DIST = path.join(ROOT, "dist")
@@ -226,6 +226,23 @@ function registerIpc() {
   // Deleting a project has no HTTP API, so the main process removes it from
   // opencode's own database. Local servers only: the database is on this machine.
   ipcMain.handle("opencode:delete-project", (_event, projectID) => opencodeDb.deleteProject(projectID))
+
+  // The native folder picker behind the sidebar's "Add project". Only the main
+  // process can open an OS dialog; the renderer gets back the chosen path or null.
+  ipcMain.handle("dialog:pick-directory", async (event, options) => {
+    const window = senderWindow(event)
+    const settings = {
+      title: typeof options?.title === "string" ? options.title : "Add project",
+      buttonLabel: typeof options?.buttonLabel === "string" ? options.buttonLabel : undefined,
+      // `createDirectory` is macOS-only and simply ignored elsewhere.
+      properties: ["openDirectory", "createDirectory"],
+    }
+    const result = window
+      ? await dialog.showOpenDialog(window, settings)
+      : await dialog.showOpenDialog(settings)
+    if (result.canceled || !result.filePaths?.length) return null
+    return result.filePaths[0]
+  })
 
   // Window controls for the chromeless frame.
   ipcMain.handle("window:minimize", (event) => {

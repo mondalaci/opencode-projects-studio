@@ -159,6 +159,23 @@ export interface DesktopFilesApi {
   read(request: { dir: string; path: string }): Promise<FileReadResult>
 }
 
+/** Optional labels for the native directory picker. */
+export interface DirectoryPickOptions {
+  title?: string
+  buttonLabel?: string
+}
+
+/**
+ * Native OS dialogs a page cannot open itself.
+ *
+ * The sidebar's "Add project" needs a folder picker, which is a main-process
+ * surface; in a browser the directory is typed in by hand instead.
+ */
+export interface DesktopDialogApi {
+  /** The directory chosen in the OS picker, or null when it is cancelled. */
+  pickDirectory(options?: DirectoryPickOptions): Promise<string | null>
+}
+
 /** The result of writing to the runtime config file. */
 export interface ConfigWriteResult {
   ok: boolean
@@ -266,6 +283,7 @@ export interface DesktopBridge {
     unstage(request: { dir: string; path: string }): Promise<GitOpResult>
   }
   files: DesktopFilesApi
+  dialog: DesktopDialogApi
   config: DesktopConfigApi
   opencode: DesktopOpencodeApi
   tray: DesktopTrayApi
@@ -298,6 +316,11 @@ export function gitAvailable(): boolean {
 /** Whether the runtime config file can be written (the desktop app, not a browser). */
 export function configWritable(): boolean {
   return Boolean(desktopBridge()?.config)
+}
+
+/** Whether the OS folder picker is available (the desktop app, not a browser). */
+export function directoryPickerAvailable(): boolean {
+  return Boolean(desktopBridge()?.dialog)
 }
 
 /** Whether a project can be deleted, which needs opencode's local database. */

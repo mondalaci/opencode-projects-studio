@@ -1,6 +1,6 @@
 import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
-import { sessionDirectory, type ProjectInfo, type SessionInfo } from "@/api/types"
+import { ROOT_DIRECTORY, sessionDirectory, type ProjectInfo, type SessionInfo } from "@/api/types"
 import { useHiddenProjects } from "./hiddenProjects"
 import { useServer } from "./server"
 
@@ -83,6 +83,12 @@ export function useProjects() {
   /** Every known project, sorted by activity, each with its newest conversation. */
   const allEntries = computed<ProjectEntry[]>(() =>
     [...projects.value]
+      // The root (`/`) is opencode's own placeholder, not a real project. The
+      // server hands it back (as the built-in `global` and, once anything is
+      // scoped to `/`, a second ordinary project), and any request aimed at `/`
+      // makes it resolve — and so recreate — that second project. Keeping it out
+      // of the sidebar means the app never points at `/` and it stays gone.
+      .filter((project) => project.canonical !== ROOT_DIRECTORY)
       .map((project) => ({
         directory: project.canonical,
         name: projectName(project),
@@ -237,9 +243,11 @@ export function useProjects() {
    */
   async function load(client: ServerClient) {
     loading.value = true
-    pending.value = projects.value.length
+    // The root placeholder is not a project the sidebar shows, so it is not
+    // fetched for either — and nothing ends up pointing the app at `/`.
+    const list = projects.value.filter((project) => project.canonical !== ROOT_DIRECTORY)
+    pending.value = list.length
     try {
-      const list = [...projects.value]
       const results = await mapLimit(list, 6, async (project) => {
         try {
           const res = await client.listSessions({ directory: project.canonical, limit: 10, archived: false })
@@ -262,6 +270,7 @@ export function useProjects() {
 
   /** Re-read one project's newest conversation (after a new chat, say). */
   async function refreshOne(client: ServerClient, target: string) {
+    if (target === ROOT_DIRECTORY) return
     try {
       const res = await client.listSessions({ directory: target, limit: 10, archived: false })
       latest.value = { ...latest.value, [target]: newestSession(res.data) }

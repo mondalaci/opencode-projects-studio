@@ -3,7 +3,8 @@
  *
  * Exposes a deliberately small, promise-based surface on `window.opencodeDesktop`.
  * The renderer never sees `ipcRenderer`, `require`, or the filesystem: it can
- * only ask the main process for git data and let it open things externally.
+ * only ask the main process for git data, open a native dialog, and let it open
+ * things externally.
  */
 const { contextBridge, ipcRenderer } = require("electron")
 
@@ -35,6 +36,12 @@ const filesApi = {
   list: (directory) => ipcRenderer.invoke("files:list", directory),
   /** Read one file for the read-only viewer. */
   read: (request) => ipcRenderer.invoke("files:read", request),
+}
+
+/** Native OS dialogs a page cannot open itself, such as the folder picker. */
+const dialogApi = {
+  /** The directory chosen in the OS picker, or null when it is cancelled. */
+  pickDirectory: (options) => ipcRenderer.invoke("dialog:pick-directory", options),
 }
 
 /** The runtime config file the sidebar's Hide/Unhide actions read and write. */
@@ -113,6 +120,7 @@ contextBridge.exposeInMainWorld("opencodeDesktop", {
   platform: process.platform,
   git,
   files: filesApi,
+  dialog: dialogApi,
   config: configApi,
   opencode: opencodeApi,
   tray: trayApi,
