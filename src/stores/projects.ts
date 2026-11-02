@@ -19,8 +19,13 @@ const loaded = ref(false)
 /** How many projects still need their newest conversation fetched. */
 const pending = ref(0)
 
-/** How many conversations an expanded project row loads. */
-const CHATS_LIMIT = 50
+/** Conversations fetched per page when an expanded project row loads. */
+const CHATS_PAGE_SIZE = 100
+/**
+ * Guard against a cursor that never terminates, not a limit on the project: at
+ * the server's page size this covers thousands of conversations.
+ */
+const CHATS_MAX_PAGES = 50
 
 /** Project directories whose full conversation list is expanded in the sidebar. */
 const expanded = ref<Record<string, true>>({})
@@ -201,13 +206,31 @@ export function useProjects() {
     return chatsPending.value[directory] === true
   }
 
-  /** Fetch a project's full conversation list (once) for its expanded row. */
+  /** Fetch a project's whole conversation list (once) for its expanded row. */
   async function loadChats(client: ServerClient, directory: string) {
     if (chatsPending.value[directory]) return
     chatsPending.value = { ...chatsPending.value, [directory]: true }
     try {
-      const res = await client.listSessions({ directory, limit: CHATS_LIMIT, archived: false })
-      chats.value = { ...chats.value, [directory]: rootsByNewest(res.data) }
+      // A project can hold more conversations than one page. The list is shown
+      // newest first and the cursor carries its own direction, so only the first
+      // page is asked without one; the rest are followed to the end.
+      const all = new Map<string, SessionInfo>()
+      let cursor: string | undefined
+      for (let page = 0; page < CHATS_MAX_PAGES; page++) {
+        const res = await client.listSessions({
+          directory,
+          limit: CHATS_PAGE_SIZE,
+          archived: false,
+          cursor,
+        })
+        for (const session of res.data) {
+          if (!session.parentID) all.set(session.id, session)
+        }
+        const next = res.cursor?.next
+        if (!next || res.data.length === 0) break
+        cursor = next
+      }
+      chats.value = { ...chats.value, [directory]: rootsByNewest([...all.values()]) }
     } catch {
       /* leave whatever was there (usually nothing) in place */
     } finally {
