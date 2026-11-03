@@ -187,12 +187,16 @@ function checkLiveness() {
 }
 
 async function resync(client: ServerClient) {
+  // Reload against the project on screen: an unscoped list is the *default*
+  // project's conversations, which would drop the open one from `sessions` and
+  // blank the header (title, date, cost) until the next project switch.
+  const directory = server.directory.value
   try {
-    await sessions.load(client)
+    await sessions.load(client, directory)
   } catch {
     /* ignore */
   }
-  await chat.reconcile(client)
+  await chat.reconcile(client, directory)
 }
 
 /** SSE handler for the leader: apply locally, then fan out to followers. */
