@@ -514,7 +514,10 @@ log, because settings will not persist for that run.
   which sends it as the reply. The card answers itself the moment its last choice
   lands, and keeps a Submit button only when nothing on it can end the question (a
   multiple choice, or a step finished in a browser); `Alt`+`X` withdraws a question
-  instead.
+  instead. A typed answer is read back out of the answered tool call's own metadata
+  and shown in the thread as a message of its own, so the reply reads like any other
+  turn rather than only as the tool row's output; a picked option stays on the tool
+  row, since the card that offered it is the thing being answered.
 - Links in a conversation (and anywhere else in the app) always open in the OS
   browser, never inside the window: a left click, a middle click and a
   `target="_blank"` all end up at `shell.openExternal`. A same-origin navigation

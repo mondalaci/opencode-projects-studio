@@ -19,6 +19,7 @@ import type {
   UserMessage,
 } from "@/api/types"
 import { parseDataUrl } from "@/utils/file"
+import { questionReplies } from "@/utils/question"
 
 export type ChatStatus = { type: "idle" } | { type: "busy" } | { type: "retry"; attempt: number; message: string }
 
@@ -220,6 +221,30 @@ function joinText(content: ToolContent[] | undefined): string {
 
 export function useChat() {
   const isBusy = computed(() => status.value.type === "busy" || status.value.type === "retry")
+
+  /**
+   * The conversation as it reads, with a question's typed replies woven in.
+   *
+   * The server records a free-form answer inside the `question` tool that asked
+   * for it, so on its own the answer only ever shows as that tool call's output.
+   * Deriving a message from the tool's structured answers — rather than keeping
+   * one locally — is what makes the reply read like any other turn, survive a
+   * reload, and appear the moment the tool reports the answer back.
+   */
+  const conversation = computed<SessionMessage[]>(() => {
+    const out: SessionMessage[] = []
+    for (const message of messages.value) {
+      out.push(message)
+      if (message.type !== "assistant") continue
+      for (const block of message.content) {
+        if (block.type !== "tool") continue
+        for (const reply of questionReplies(block)) {
+          out.push({ id: reply.id, type: "user", text: reply.text, time: { created: reply.at } })
+        }
+      }
+    }
+    return out
+  })
 
   const pendingPermissions = computed(() =>
     permissions.value.filter((request) => request.sessionID === currentSessionID.value),
@@ -815,6 +840,7 @@ export function useChat() {
 
   return {
     messages,
+    conversation,
     status,
     isBusy,
     awaitingUser,
