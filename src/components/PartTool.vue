@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { Check, ChevronRight, CircleAlert, Terminal } from "lucide-vue-next"
+import { Check, ChevronRight, CircleAlert, CircleSlash, Terminal } from "lucide-vue-next"
 import type { AssistantToolBlock, ToolFileContent } from "@/api/types"
 import { prettyJson, toolSummary } from "@/utils/format"
 import { toolOutputText } from "@/utils/compose"
+import { isStop } from "@/utils/stop"
 import { isDataUrl } from "@/utils/file"
 import { highlightLines } from "@/utils/highlight"
 import { openImage } from "@/stores/lightbox"
@@ -14,6 +15,12 @@ const open = ref(false)
 
 const state = computed(() => props.block.state)
 const running = computed(() => state.value.status === "running" || state.value.status === "streaming")
+/**
+ * A tool that was stopped rather than failed. Dismissing the question that was
+ * holding a turn aborts its tool call, which arrives as an `error`; painting
+ * that red reads as a crash where nothing actually went wrong.
+ */
+const stopped = computed(() => state.value.status === "error" && isStop(state.value.error))
 const input = computed<Record<string, unknown>>(() => (state.value.status === "streaming" ? {} : state.value.input))
 const summary = computed(() => toolSummary(props.block.name, input.value))
 const inputText = computed(() =>
@@ -69,7 +76,7 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 </script>
 
 <template>
-  <div class="tool" :class="state.status">
+  <div class="tool" :class="stopped ? 'stopped' : state.status">
     <button class="head" @click="open = !open">
       <!-- The chevron, the terminal and the text are one flowing line: a long
            argument wraps at the row's own left edge, under the chevron, instead
@@ -86,6 +93,7 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
       <span class="status">
         <Spinner v-if="running" :size="12" />
         <Check v-else-if="state.status === 'completed'" :size="14" class="ok" />
+        <CircleSlash v-else-if="stopped" :size="14" class="stop" />
         <CircleAlert v-else :size="14" class="err" />
       </span>
     </button>
@@ -201,6 +209,9 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 }
 .ok {
   color: #4ade80;
+}
+.stop {
+  color: var(--text-faint);
 }
 .err {
   color: var(--danger);
