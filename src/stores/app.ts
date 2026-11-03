@@ -183,12 +183,11 @@ export function useApp() {
     const client = connection.client.value
     if (!client) return
     if (server.directory.value !== directory) await switchProject(directory)
+    // Only open a conversation that already exists. A project with none stays
+    // empty until the first prompt creates its conversation, so simply opening
+    // (or re-opening) a project never litters it with empty Untitled chats.
     const session = projects.latestFor(directory)
-    if (session) {
-      await selectSession(session.id)
-    } else {
-      await newChat()
-    }
+    if (session) await selectSession(session.id)
     requestComposerFocus()
   }
 
@@ -306,12 +305,18 @@ export function useApp() {
   async function newChat() {
     const client = connection.client.value
     if (!client) return null
+    // An archived project's folder is gone, so there is nowhere to run a new
+    // conversation. Its past conversations stay readable.
+    if (projects.isArchived(server.directory.value)) return null
     const session = await sessions.create(
       client,
       { agent: server.agent, model: server.selectedModel.value ?? undefined },
       server.directory.value,
     )
-    if (server.directory.value) projects.setLatest(server.directory.value, session)
+    if (server.directory.value) {
+      projects.setLatest(server.directory.value, session)
+      projects.recordCreated(server.directory.value)
+    }
     await selectSession(session.id)
     requestComposerFocus()
     return session

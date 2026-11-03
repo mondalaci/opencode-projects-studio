@@ -175,8 +175,18 @@ export class ServerClient {
     return (Array.isArray(docs) ? docs.find((doc) => doc?.info)?.info : undefined) ?? {}
   }
 
+  /**
+   * List the known projects.
+   *
+   * Archived projects — those whose folder no longer exists on the server — are
+   * excluded unless `archived=true` is asked for. The sidebar shows them dimmed
+   * rather than dropping them, so the request always asks.
+   */
   async projects(opts: RequestOptions = {}): Promise<ProjectInfo[]> {
-    return this.request<ProjectInfo[]>("/api/project", opts)
+    return this.request<ProjectInfo[]>("/api/project", {
+      ...opts,
+      query: { archived: "true", ...opts.query },
+    })
   }
 
   async agents(opts: RequestOptions = {}): Promise<AgentInfo[]> {
@@ -305,15 +315,25 @@ export class ServerClient {
   /* -------------------------------- sessions -------------------------------- */
 
   async listSessions(
-    opts: RequestOptions & { limit?: number; search?: string; cursor?: string; archived?: boolean } = {},
+    opts: RequestOptions & {
+      limit?: number
+      search?: string
+      cursor?: string
+      archived?: boolean
+      /**
+       * `"null"` asks for root conversations only; an id asks for that
+       * conversation's children. Omitted lists both.
+       */
+      parentID?: string
+    } = {},
   ): Promise<ListEnvelope<SessionInfo>> {
-    const { limit, search, cursor, archived, directory, ...rest } = opts
+    const { limit, search, cursor, archived, parentID, directory, ...rest } = opts
     // `/api/session` is the one endpoint scoped by a flat `directory` query
     // parameter rather than the `location[directory]` deep object, so it is put
     // into `query` here instead of riding `opts.directory`.
     return this.request<ListEnvelope<SessionInfo>>("/api/session", {
       ...rest,
-      query: { limit, search, cursor, archived, directory, ...rest.query },
+      query: { limit, search, cursor, archived, parentID, directory, ...rest.query },
     })
   }
 

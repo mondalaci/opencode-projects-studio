@@ -19,8 +19,18 @@ import { relativeTime } from "@/utils/format"
 import { fuzzyMatch } from "@/utils/fuzzy"
 
 const app = useApp()
-const { entries, hiddenEntries, loading, pending, current, isExpanded, chatsFor, isChatsLoading, toggleExpanded } =
-  app.projects
+const {
+  entries,
+  hiddenEntries,
+  loading,
+  pending,
+  current,
+  isExpanded,
+  chatsFor,
+  isChatsLoading,
+  countFor,
+  toggleExpanded,
+} = app.projects
 const { openProject, archiveSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
   app
 const { stateFor, reasonFor } = useSessionState()
@@ -152,6 +162,17 @@ function conversationTitle(entry: ProjectEntry) {
 
 function conversationTime(entry: ProjectEntry) {
   return relativeTime(entry.session?.time?.updated ?? entry.session?.time?.created)
+}
+
+/** How many conversations a project holds, or `undefined` until it is counted. */
+function conversationCount(entry: ProjectEntry) {
+  return countFor(entry.directory)
+}
+
+/** The tooltip for a project's count. */
+function countTitle(entry: ProjectEntry) {
+  const count = conversationCount(entry)
+  return count === 1 ? "1 conversation" : `${count} conversations`
 }
 
 /** The state dot for a project's conversation. */
@@ -358,6 +379,7 @@ function onKeydown(event: KeyboardEvent) {
         :class="{
           active: isActive(entry),
           expanded: isExpanded(entry.directory),
+          archived: entry.archived,
           'kb-active': index === navIndex,
           'cursor-active': filtering && index === cursor,
         }"
@@ -391,6 +413,16 @@ function onKeydown(event: KeyboardEvent) {
           <span class="line">
             <Folder :size="13" class="folder" />
             <span class="name">{{ entry.name }}</span>
+            <span
+              v-if="entry.archived"
+              class="archived-badge"
+              title="Archived — this project's folder no longer exists"
+            >archived</span>
+            <span
+              v-if="conversationCount(entry)"
+              class="count"
+              :title="countTitle(entry)"
+            >{{ conversationCount(entry) }}</span>
             <Spinner v-if="isPending(entry)" :size="11" />
             <span v-else class="time">{{ conversationTime(entry) }}</span>
           </span>
@@ -665,6 +697,44 @@ function onKeydown(event: KeyboardEvent) {
   font-size: 10.5px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+/* The project's conversation tally, between the name and the timestamp. */
+.count {
+  flex: none;
+  min-width: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  color: var(--text-faint);
+  background: var(--bg-active);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.project.active .count {
+  color: var(--text-muted);
+}
+/* An archived project's folder is gone: the row stays so its past
+   conversations remain reachable, but it reads as inactive and offers no new
+   chat. */
+.project.archived .folder,
+.project.archived .name,
+.project.archived .chat-title {
+  color: var(--text-faint);
+}
+.archived-badge {
+  flex: none;
+  padding: 0 5px;
+  font-size: 9.5px;
+  line-height: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  background: var(--bg-active);
+  border-radius: 7px;
+}
+.project.active .archived-badge {
+  color: var(--text-muted);
 }
 .conversation {
   padding-left: 19px;

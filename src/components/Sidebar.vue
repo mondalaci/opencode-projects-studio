@@ -16,6 +16,9 @@ const { newChat, openArchive } = app
 /** How many projects the list holds; shown next to the header label. */
 const projectCount = computed(() => app.projects.entries.value.length)
 
+/** Whether the open project is archived — its folder is gone, so no new chat. */
+const archivedActive = computed(() => app.projects.isArchived(app.server.directory.value))
+
 /** Whether an "Add project" pick is running, so the button cannot be double-fired. */
 const addingProject = ref(false)
 /** Why adding a project failed, shown under the header until dismissed. */
@@ -58,7 +61,12 @@ async function addProject() {
         <button class="icon" title="Add project directory…" :disabled="addingProject" @click="addProject()">
           <FolderPlus :size="16" />
         </button>
-        <button class="icon" title="New chat (Alt+N)" @click="newChat()">
+        <button
+          class="icon"
+          :disabled="archivedActive"
+          :title="archivedActive ? 'Archived project — its folder no longer exists' : 'New chat (Alt+N)'"
+          @click="newChat()"
+        >
           <MessageSquarePlus :size="17" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="N" />
         </button>

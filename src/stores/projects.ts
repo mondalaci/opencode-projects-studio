@@ -33,6 +33,8 @@ const expanded = ref<Record<string, true>>({})
 const chats = ref<Record<string, SessionInfo[]>>({})
 /** Projects whose conversation list is currently being fetched. */
 const chatsPending = ref<Record<string, true>>({})
+/** How many conversations each project holds, once it has been counted. */
+const counts = ref<Record<string, number>>({})
 
 /** A project together with the conversation the sidebar shows for it. */
 export interface ProjectEntry {
@@ -40,6 +42,12 @@ export interface ProjectEntry {
   name: string
   project: ProjectInfo
   session: SessionInfo | null
+  /**
+   * The project is archived on the server: its folder no longer exists, so
+   * opencode swept it out of the active list. Past conversations stay readable,
+   * but nothing new can run in it.
+   */
+  archived: boolean
 }
 
 /** The display name of a project: its registered name, else the folder name. */
@@ -50,14 +58,19 @@ export function projectName(project: ProjectInfo): string {
   return path.split("/").filter(Boolean).pop() ?? path
 }
 
-function newestSession(list: SessionInfo[]): SessionInfo | null {
-  const roots = list.filter((session) => !session.parentID)
-  if (!roots.length) return null
-  return roots.reduce((newest, session) => {
-    const a = session.time?.updated ?? session.time?.created ?? 0
-    const b = newest.time?.updated ?? newest.time?.created ?? 0
-    return a > b ? session : newest
-  })
+/**
+ * Whether `a` is the better row to show for a directory that has more than one.
+ *
+ * opencode can hold several project rows for the same canonical directory (a
+ * stale twin is left behind when a project is re-created), and the sidebar keys
+ * rows by directory, so they have to collapse to one. A live row beats an
+ * archived one; otherwise the most recently active wins.
+ */
+function preferProject(a: ProjectInfo, b: ProjectInfo): boolean {
+  const aArchived = Boolean(a.time?.archived)
+  const bArchived = Boolean(b.time?.archived)
+  if (aArchived !== bArchived) return !aArchived
+  return (a.time?.active ?? 0) > (b.time?.active ?? 0)
 }
 
 /** Root conversations (no subagents), newest first. */
@@ -65,6 +78,35 @@ function rootsByNewest(list: SessionInfo[]): SessionInfo[] {
   return list
     .filter((session) => !session.parentID)
     .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
+}
+
+/**
+ * Every root conversation of a project, newest first.
+ *
+ * A directory can hold more conversations than one page, so the cursor is
+ * followed to the end. Subagents are excluded at the server with
+ * `parentID=null`, so the pages carry only the conversations the sidebar lists
+ * and counts.
+ */
+async function fetchRoots(client: ServerClient, directory: string): Promise<SessionInfo[]> {
+  const all = new Map<string, SessionInfo>()
+  let cursor: string | undefined
+  for (let page = 0; page < CHATS_MAX_PAGES; page++) {
+    const res = await client.listSessions({
+      directory,
+      limit: CHATS_PAGE_SIZE,
+      archived: false,
+      parentID: "null",
+      cursor,
+    })
+    for (const session of res.data) {
+      if (!session.parentID) all.set(session.id, session)
+    }
+    const next = res.cursor?.next
+    if (!next || res.data.length === 0) break
+    cursor = next
+  }
+  return rootsByNewest([...all.values()])
 }
 
 /** Run `worker` over `items` with at most `limit` concurrent calls. */
@@ -86,27 +128,33 @@ export function useProjects() {
   const hidden = useHiddenProjects()
 
   /** Every known project, sorted by activity, each with its newest conversation. */
-  const allEntries = computed<ProjectEntry[]>(() =>
-    [...projects.value]
-      // The root (`/`) is opencode's own placeholder, not a real project. The
-      // server hands it back (as the built-in `global` and, once anything is
-      // scoped to `/`, a second ordinary project), and any request aimed at `/`
-      // makes it resolve — and so recreate — that second project. Keeping it out
-      // of the sidebar means the app never points at `/` and it stays gone.
-      .filter((project) => project.canonical !== ROOT_DIRECTORY)
+  const allEntries = computed<ProjectEntry[]>(() => {
+    // The root (`/`) is opencode's own placeholder, not a real project. The
+    // server hands it back (as the built-in `global` and, once anything is
+    // scoped to `/`, a second ordinary project), and any request aimed at `/`
+    // makes it resolve — and so recreate — that second project. Keeping it out
+    // of the sidebar means the app never points at `/` and it stays gone.
+    const byDirectory = new Map<string, ProjectInfo>()
+    for (const project of projects.value) {
+      if (project.canonical === ROOT_DIRECTORY) continue
+      const current = byDirectory.get(project.canonical)
+      if (!current || preferProject(project, current)) byDirectory.set(project.canonical, project)
+    }
+    return [...byDirectory.values()]
       .map((project) => ({
         directory: project.canonical,
         name: projectName(project),
         project,
         session: latest.value[project.canonical] ?? null,
+        archived: Boolean(project.time?.archived),
       }))
       .sort((a, b) => {
         const aTime = a.session?.time?.updated ?? a.session?.time?.created ?? 0
         const bTime = b.session?.time?.updated ?? b.session?.time?.created ?? 0
         if (aTime !== bTime) return bTime - aTime
         return a.name.localeCompare(b.name)
-      }),
-  )
+      })
+  })
 
   /** The projects the sidebar lists — every known project but the hidden ones. */
   const entries = computed<ProjectEntry[]>(() =>
@@ -123,6 +171,8 @@ export function useProjects() {
     let best: ProjectEntry | null = null
     let bestTime = -1
     for (const entry of entries.value) {
+      // An archived project's folder is gone, so it is never the one to open.
+      if (entry.archived) continue
       const time = entry.session?.time?.updated ?? entry.session?.time?.created ?? 0
       if (entry.session && time > bestTime) {
         best = entry
@@ -131,6 +181,12 @@ export function useProjects() {
     }
     return best
   })
+
+  /** Whether a project is archived (its folder no longer exists on the server). */
+  function isArchived(target: string | null | undefined): boolean {
+    if (!target) return false
+    return allEntries.value.some((entry) => entry.directory === target && entry.archived)
+  }
 
   /** Conversation shown for a project, if one is known. */
   function latestFor(target: string | null | undefined): SessionInfo | null {
@@ -188,7 +244,25 @@ export function useProjects() {
       delete next[directory]
       chats.value = next
     }
+    if (directory in counts.value) {
+      const next = { ...counts.value }
+      delete next[directory]
+      counts.value = next
+    }
     collapse(directory)
+  }
+
+  /** How many conversations a project holds, or `undefined` until it is counted. */
+  function countFor(directory: string): number | undefined {
+    return counts.value[directory]
+  }
+
+  /** Record a conversation this client just created, without a refetch. */
+  function recordCreated(directory: string | null | undefined) {
+    if (!directory) return
+    const current = counts.value[directory]
+    if (current === undefined) return
+    counts.value = { ...counts.value, [directory]: current + 1 }
   }
 
   /** Whether a project row is showing its conversation list. */
@@ -211,26 +285,9 @@ export function useProjects() {
     if (chatsPending.value[directory]) return
     chatsPending.value = { ...chatsPending.value, [directory]: true }
     try {
-      // A project can hold more conversations than one page. The list is shown
-      // newest first and the cursor carries its own direction, so only the first
-      // page is asked without one; the rest are followed to the end.
-      const all = new Map<string, SessionInfo>()
-      let cursor: string | undefined
-      for (let page = 0; page < CHATS_MAX_PAGES; page++) {
-        const res = await client.listSessions({
-          directory,
-          limit: CHATS_PAGE_SIZE,
-          archived: false,
-          cursor,
-        })
-        for (const session of res.data) {
-          if (!session.parentID) all.set(session.id, session)
-        }
-        const next = res.cursor?.next
-        if (!next || res.data.length === 0) break
-        cursor = next
-      }
-      chats.value = { ...chats.value, [directory]: rootsByNewest([...all.values()]) }
+      const roots = await fetchRoots(client, directory)
+      chats.value = { ...chats.value, [directory]: roots }
+      counts.value = { ...counts.value, [directory]: roots.length }
     } catch {
       /* leave whatever was there (usually nothing) in place */
     } finally {
@@ -259,10 +316,11 @@ export function useProjects() {
   }
 
   /**
-   * Fetch the newest conversation of every project.
+   * Fetch every project's conversations, so each row knows both its newest
+   * conversation and how many it holds.
    *
-   * One request per project, capped to a handful in flight, because the session
-   * endpoint is scoped by `directory`.
+   * The session endpoint is scoped by `directory`, so this is one (paginated)
+   * request per project, capped to a handful in flight.
    */
   async function load(client: ServerClient) {
     loading.value = true
@@ -273,17 +331,24 @@ export function useProjects() {
     try {
       const results = await mapLimit(list, 6, async (project) => {
         try {
-          const res = await client.listSessions({ directory: project.canonical, limit: 10, archived: false })
-          return [project.canonical, newestSession(res.data)] as const
+          // The whole list is read, not just the newest page, because the row
+          // carries the project's conversation count as well as its newest one.
+          const roots = await fetchRoots(client, project.canonical)
+          return [project.canonical, roots] as const
         } catch {
-          return [project.canonical, null] as const
+          return [project.canonical, [] as SessionInfo[]] as const
         } finally {
           pending.value = Math.max(0, pending.value - 1)
         }
       })
       const next: Record<string, SessionInfo | null> = {}
-      for (const [worktree, session] of results) next[worktree] = session
+      const nextCounts: Record<string, number> = {}
+      for (const [worktree, roots] of results) {
+        next[worktree] = roots[0] ?? null
+        nextCounts[worktree] = roots.length
+      }
       latest.value = next
+      counts.value = nextCounts
       loaded.value = true
     } finally {
       loading.value = false
@@ -291,12 +356,13 @@ export function useProjects() {
     }
   }
 
-  /** Re-read one project's newest conversation (after a new chat, say). */
+  /** Re-read one project's newest conversation and count (after a change, say). */
   async function refreshOne(client: ServerClient, target: string) {
     if (target === ROOT_DIRECTORY) return
     try {
-      const res = await client.listSessions({ directory: target, limit: 10, archived: false })
-      latest.value = { ...latest.value, [target]: newestSession(res.data) }
+      const roots = await fetchRoots(client, target)
+      latest.value = { ...latest.value, [target]: roots[0] ?? null }
+      counts.value = { ...counts.value, [target]: roots.length }
     } catch {
       /* leave the previous value in place */
     }
@@ -342,6 +408,7 @@ export function useProjects() {
     expanded.value = {}
     chats.value = {}
     chatsPending.value = {}
+    counts.value = {}
   }
 
   return {
@@ -362,6 +429,9 @@ export function useProjects() {
     isExpanded,
     chatsFor,
     isChatsLoading,
+    countFor,
+    isArchived,
+    recordCreated,
     loadChats,
     collapse,
     toggleExpanded,
