@@ -95,7 +95,6 @@ async function fetchRoots(client: ServerClient, directory: string): Promise<Sess
     const res = await client.listSessions({
       directory,
       limit: CHATS_PAGE_SIZE,
-      archived: false,
       parentID: "null",
       cursor,
     })
@@ -384,7 +383,7 @@ export function useProjects() {
           }
         }
       }
-    } else if (type === "session.deleted" || type === "session.archived") {
+    } else if (type === "session.deleted") {
       const id = data.sessionID as string | undefined
       const directory = (data.location as { directory?: string } | undefined)?.directory
       if (id) {

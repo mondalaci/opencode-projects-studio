@@ -319,7 +319,6 @@ export class ServerClient {
       limit?: number
       search?: string
       cursor?: string
-      archived?: boolean
       /**
        * `"null"` asks for root conversations only; an id asks for that
        * conversation's children. Omitted lists both.
@@ -327,13 +326,13 @@ export class ServerClient {
       parentID?: string
     } = {},
   ): Promise<ListEnvelope<SessionInfo>> {
-    const { limit, search, cursor, archived, parentID, directory, ...rest } = opts
+    const { limit, search, cursor, parentID, directory, ...rest } = opts
     // `/api/session` is the one endpoint scoped by a flat `directory` query
     // parameter rather than the `location[directory]` deep object, so it is put
     // into `query` here instead of riding `opts.directory`.
     return this.request<ListEnvelope<SessionInfo>>("/api/session", {
       ...rest,
-      query: { limit, search, cursor, archived, parentID, directory, ...rest.query },
+      query: { limit, search, cursor, parentID, directory, ...rest.query },
     })
   }
 
@@ -356,7 +355,7 @@ export class ServerClient {
 
   async updateSession(
     sessionID: string,
-    body: { title?: string; archived?: boolean },
+    body: { title?: string },
     opts: RequestOptions = {},
   ): Promise<SessionInfo | null> {
     const res = await this.request<DataEnvelope<SessionInfo>>(`/api/session/${sessionID}`, {

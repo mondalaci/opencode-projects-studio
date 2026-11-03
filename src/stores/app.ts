@@ -1,8 +1,7 @@
 import type { Credentials } from "@/api/client"
 import { desktopBridge } from "@/api/desktop"
 import type { InstanceInfo } from "@/api/discovery"
-import { isRootDirectory, sessionDirectory, type AssistantMessage, type SessionInfo } from "@/api/types"
-import { useArchive } from "./archive"
+import { isRootDirectory, sessionDirectory, type AssistantMessage } from "@/api/types"
 import { useChat } from "./chat"
 import { useConnection } from "./connection"
 import { draft, requestComposerFocus } from "./draft"
@@ -32,7 +31,6 @@ export function useApp() {
   const files = useFiles()
   const fileViewer = useFileViewer()
   const sessionState = useSessionState()
-  const archive = useArchive()
   const hidden = useHiddenProjects()
 
   /** Load the conversation list and event stream for the current project. */
@@ -50,7 +48,6 @@ export function useApp() {
     files.reset()
     fileViewer.close()
     sessionState.reset()
-    archive.reset()
     hidden.reset()
 
     server.applySavedPrefs(info.origin)
@@ -87,7 +84,6 @@ export function useApp() {
       sessions.reset()
       projects.reset()
       server.reset()
-      archive.reset()
       hidden.reset()
       connection.disconnect()
       connection.connectError.value = error instanceof Error ? error.message : String(error)
@@ -104,7 +100,6 @@ export function useApp() {
     files.reset()
     fileViewer.close()
     sessionState.reset()
-    archive.reset()
     hidden.reset()
     connection.disconnect()
   }
@@ -112,7 +107,6 @@ export function useApp() {
   async function selectSession(sessionID: string) {
     const client = connection.client.value
     if (!client) return
-    sessions.clearPreview()
     sessions.currentID.value = sessionID
     sessionState.markSeen(sessionID)
     writeSessionParam(sessionID, readSessionParam() === sessionID)
@@ -413,67 +407,12 @@ export function useApp() {
     await chat.compact(client, sessionID, server.directory.value)
   }
 
-  async function archiveSession(sessionID: string, directory?: string) {
-    const client = connection.client.value
-    if (!client) return
-    const target = directory ?? server.directory.value
-    await sessions.archive(client, sessionID, target)
-    projects.forgetChat(sessionID)
-    if (target === server.directory.value && !sessions.currentID.value && sessions.sorted.value[0]) {
-      await selectSession(sessions.sorted.value[0].id)
-    }
-    if (target) await projects.refreshOne(client, target)
-  }
-
-  async function openArchive() {
-    const client = connection.client.value
-    if (!client) return
-    archive.open.value = true
-    await archive.load(client)
-  }
-
-  function closeArchive() {
-    archive.open.value = false
-  }
-
-  /**
-   * Show an archived conversation in the conversation pane without switching
-   * project or adding it to the active lists, so it can be read before deciding
-   * to restore or delete it.
-   */
-  async function viewArchivedSession(session: SessionInfo) {
-    const client = connection.client.value
-    if (!client) return
-    const directory = session.location?.directory ?? server.directory.value
-    sessions.previewSession(session)
-    await chat.open(client, session.id, directory)
-  }
-
-  async function restoreSession(sessionID: string, directory?: string) {
-    const client = connection.client.value
-    if (!client) return false
-    const target = directory ?? server.directory.value
-    await client.updateSession(sessionID, { archived: false }, { directory: target })
-    archive.remove(sessionID)
-
-    // The PATCH answers 204, so re-read the row to put it back in the lists.
-    const info = await client.getSession(sessionID).catch(() => null)
-    const owner = info ? (sessionDirectory(info) ?? target) : target
-    if (info) {
-      if (owner && owner === server.directory.value) sessions.upsert(info)
-      if (owner) projects.setLatest(owner, info)
-    }
-    if (owner) await projects.refreshOne(client, owner)
-    return true
-  }
-
-  /** Permanently delete a conversation, from the archive page or a list. */
+  /** Permanently delete a conversation. */
   async function deleteSession(sessionID: string, directory?: string) {
     const client = connection.client.value
     if (!client) return false
     const target = directory ?? server.directory.value
     await client.deleteSession(sessionID, { directory: target })
-    archive.remove(sessionID)
     sessions.forget(sessionID)
     projects.forgetChat(sessionID)
     if (target) await projects.refreshOne(client, target)
@@ -508,7 +447,6 @@ export function useApp() {
     server,
     sessions,
     projects,
-    archive,
     hidden,
     sessionState,
     chat,
@@ -531,11 +469,6 @@ export function useApp() {
     compact,
     abort,
     continueReply,
-    archiveSession,
-    openArchive,
-    closeArchive,
-    viewArchivedSession,
-    restoreSession,
     deleteSession,
     renameSession,
     replyPermission,

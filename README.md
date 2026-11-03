@@ -18,10 +18,9 @@ conversations:
   chevron on a project row expands it to list that project's conversations
   (newest first); `Alt`+`L` toggles the current project's row. Each row's `⋯`
   menu hides the project or deletes it for good (behind a confirmation), and a
-  **Hidden** section folds away at the bottom of the list to bring one back. The
-  header's archive button opens the archived conversations page, grouped by
-  project. Clicking one opens it in the conversation pane, read-only, so it can be
-  reviewed before being restored or permanently deleted.
+  **Hidden** section folds away at the bottom of the list to bring one back. Each
+  conversation's own `⋯` menu renames it or deletes it for good, also behind a
+  confirmation.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
   beside the title and the staged ones under their own heading. It re-scans the
@@ -173,7 +172,6 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   api/desktop.ts     Typed access to the preload bridge
   stores/projects.ts One conversation per project, plus its expanded chat list
   stores/hiddenProjects.ts  The hidden-project list, read and written through the runtime config
-  stores/archive.ts  Archived conversations, grouped by project, for viewing, restoring or deleting
   stores/git.ts      Source-control state: status polling, selection, diffs
   stores/layout.ts   Source-control panel width
   stores/desktopWindow.ts  Maximized state for the chromeless frame
@@ -183,9 +181,8 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   components/
     ProjectsPanel.vue     Projects sidebar (expandable into per-project chats)
     ProjectMenu.vue       Hide / unhide / delete actions of one project row
-    ConversationMenu.vue  Rename / archive actions of one conversation row
-    ConfirmDialog.vue     Modal confirmation before a project is deleted
-    ArchivePanel.vue      Archived conversations, grouped by project: click to view, plus restore and delete
+    ConversationMenu.vue  Rename / delete actions of one conversation row
+    ConfirmDialog.vue     Modal confirmation before a project or conversation is deleted
     SourceControl.vue     Right-hand source-control panel (flat, full paths)
     DiffViewer.vue        Split/unified diff view
     FileViewer.vue        Read-only file view
@@ -412,7 +409,7 @@ each badge names its own modifier, so a letter never appears next to the wrong o
 | `Alt`+`M` / `Alt`+`A` / `Alt`+`E` | Model / agent / effort |
 | `Alt`+`C` | Focus the composer |
 | `Alt`+`X` | Stop the current turn |
-| `Esc` | Close the open diff, search or archive page, or clear a sidebar filter (ending a Ctrl+P preview) |
+| `Esc` | Close the open diff or search page, or clear a sidebar filter (ending a Ctrl+P preview) |
 
 The two filters narrow their list as you type (subsequences work: `kwchat` finds
 `kilo-web-chat`), `↑`/`↓` move the selection, `Enter` opens it and `Esc` clears
@@ -488,14 +485,12 @@ log, because settings will not persist for that run.
   place to list all of its conversations; older ones are also reachable through
   the conversation search (`Alt`+`F`).
 - Opening a project that has no conversation yet creates its first one.
-- Renaming and archiving are on each conversation's own hover menu: the collapsed
+- Renaming and deleting are on each conversation's own hover menu: the collapsed
   project row's names its newest conversation, and every row of an expanded list
   carries the actions of the chat it belongs to. Both work against the
-  conversation's own project, so no project switch is needed. Archived
-  conversations leave the active lists and search results, and can be restored or
-  permanently deleted from the header's archive button. Clicking an archived
-  conversation opens it read-only — its composer is replaced by a notice — so it
-  can be reviewed before deciding; deleting asks for confirmation on the row.
+  conversation's own project, so no project switch is needed. Deleting a
+  conversation removes it and its messages from opencode for good, and asks for
+  confirmation first.
 - Each project row carries its own `⋯` menu: **Hide** keeps it out of the sidebar
   by adding it to the runtime config's `hideProjects`, **Unhide** (in the Hidden
   section at the bottom of the list) takes it back out, and **Delete** removes it

@@ -31,7 +31,7 @@ const {
   countFor,
   toggleExpanded,
 } = app.projects
-const { openProject, archiveSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
+const { openProject, deleteSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
   app
 const { stateFor, reasonFor } = useSessionState()
 const { writable: hiddenWritable, error: hiddenError } = app.hidden
@@ -94,6 +94,43 @@ const deleteMessage = computed(() => {
   const entry = pendingDelete.value
   if (!entry) return ""
   return `This removes ${entry.name} (${entry.directory}) and every conversation in it from opencode. It cannot be undone.`
+})
+
+/** The conversation a delete confirmation is open for, and its project. */
+const pendingChatDelete = ref<{ id: string; title: string; directory: string } | null>(null)
+const deletingChat = ref(false)
+const chatDeleteError = ref<string | null>(null)
+
+function askDeleteChat(chat: SessionInfo, directory: string) {
+  chatDeleteError.value = null
+  pendingChatDelete.value = { id: chat.id, title: chat.title || "Untitled", directory }
+}
+
+function cancelDeleteChat() {
+  if (deletingChat.value) return
+  pendingChatDelete.value = null
+  chatDeleteError.value = null
+}
+
+async function confirmDeleteChat() {
+  const pending = pendingChatDelete.value
+  if (!pending || deletingChat.value) return
+  deletingChat.value = true
+  chatDeleteError.value = null
+  try {
+    await deleteSession(pending.id, pending.directory)
+    pendingChatDelete.value = null
+  } catch (cause) {
+    chatDeleteError.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    deletingChat.value = false
+  }
+}
+
+const chatDeleteMessage = computed(() => {
+  const pending = pendingChatDelete.value
+  if (!pending) return ""
+  return `This removes “${pending.title}” and its messages from opencode. It cannot be undone.`
 })
 
 /** The conversation whose title is being edited inline, and its project. */
@@ -477,7 +514,7 @@ function onKeydown(event: KeyboardEvent) {
               <ConversationMenu
                 v-if="!isEditing(chat.id)"
                 @rename="startRename(chat, entry.directory)"
-                @archive="archiveSession(chat.id, entry.directory)"
+                @delete="askDeleteChat(chat, entry.directory)"
               />
             </div>
             <p v-if="!projectChats(entry).length" class="chats-note">No conversations yet.</p>
@@ -490,7 +527,7 @@ function onKeydown(event: KeyboardEvent) {
         <ConversationMenu
           v-if="entry.session && !isExpanded(entry.directory) && !isEditing(entry.session.id)"
           @rename="startRename(entry.session, entry.directory)"
-          @archive="archiveSession(entry.session.id, entry.directory)"
+          @delete="askDeleteChat(entry.session, entry.directory)"
         />
       </div>
 
@@ -539,6 +576,18 @@ function onKeydown(event: KeyboardEvent) {
       :error="deleteError"
       @confirm="confirmDelete"
       @cancel="cancelDelete"
+    />
+
+    <ConfirmDialog
+      :open="Boolean(pendingChatDelete)"
+      title="Delete conversation?"
+      :message="chatDeleteMessage"
+      confirm-label="Delete"
+      danger
+      :busy="deletingChat"
+      :error="chatDeleteError"
+      @confirm="confirmDeleteChat"
+      @cancel="cancelDeleteChat"
     />
   </div>
 </template>

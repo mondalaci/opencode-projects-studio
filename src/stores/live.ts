@@ -2,7 +2,6 @@ import { ref } from "vue"
 import type { ServerClient } from "@/api/client"
 import type { ServerEvent } from "@/api/types"
 import { useChat } from "./chat"
-import { useArchive } from "./archive"
 import { useProjects } from "./projects"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
@@ -12,7 +11,6 @@ const connecting = ref(false)
 const lastEventAt = ref<number | null>(null)
 
 const chat = useChat()
-const archive = useArchive()
 const sessions = useSessions()
 const projects = useProjects()
 const server = useServer()
@@ -107,34 +105,6 @@ function apply(event: ServerEvent) {
   sessions.applyEvent(event.type, data)
   projects.applyEvent(event.type, data)
   chat.applyEvent(event.type, data)
-
-  if (event.type === "session.archived" || event.type === "session.unarchived") {
-    const directory =
-      event.location?.directory ?? (data?.location as { directory?: string } | undefined)?.directory
-    if (event.type === "session.unarchived") {
-      const id = data?.sessionID as string | undefined
-      if (id) archive.remove(id)
-      if (activeClient && directory && id) {
-        // Re-read the restored row so it can join the project's loaded chat list
-        // even when it is older than the list's newest page.
-        void (async () => {
-          const info = await activeClient.getSession(id).catch(() => null)
-          if (info) {
-            if (directory === server.directory.value) sessions.upsert(info)
-            projects.setLatest(directory, info)
-          }
-          await projects.refreshOne(activeClient, directory)
-        })()
-      }
-    } else if (event.type === "session.archived") {
-      // Keep the project row pointing at its next-newest active conversation even
-      // when the archive happened in another client.
-      if (activeClient && directory) void projects.refreshOne(activeClient, directory)
-      // If the archive page is already open, pick up the new row; otherwise it
-      // loads a fresh list when opened.
-      if (activeClient && archive.open.value) void archive.load(activeClient)
-    }
-  }
 
   // A turn ending is the point the server has persisted the final messages, so
   // re-read them: streaming is best-effort and the persisted copy is canonical.

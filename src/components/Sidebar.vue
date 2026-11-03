@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { Archive, FolderPlus, MessageSquarePlus, Search } from "lucide-vue-next"
+import { FolderPlus, MessageSquarePlus, Search } from "lucide-vue-next"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import iconUrl from "../../build/icon.png"
 import ProjectsPanel from "./ProjectsPanel.vue"
 import SidebarSearch from "./SidebarSearch.vue"
-import ArchivePanel from "./ArchivePanel.vue"
-import { archiveOpen } from "@/stores/archive"
 import { useApp } from "@/stores/app"
 import { openSearch, searchOpen } from "@/stores/search"
 
 const app = useApp()
-const { newChat, openArchive } = app
+const { newChat } = app
 
 /** How many projects the list holds; shown next to the header label. */
 const projectCount = computed(() => app.projects.entries.value.length)
@@ -45,7 +43,6 @@ async function addProject() {
 <template>
   <aside class="sidebar">
     <SidebarSearch v-if="searchOpen" />
-    <ArchivePanel v-else-if="archiveOpen" />
     <template v-else>
       <header class="head drag-region">
         <img class="logo" :src="iconUrl" alt="" />
@@ -54,9 +51,6 @@ async function addProject() {
         <button class="icon" title="Search conversations (Alt+F)" @click="openSearch()">
           <Search :size="16" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="F" />
-        </button>
-        <button class="icon" title="Archived conversations" @click="openArchive()">
-          <Archive :size="16" />
         </button>
         <button class="icon" title="Add project directory…" :disabled="addingProject" @click="addProject()">
           <FolderPlus :size="16" />

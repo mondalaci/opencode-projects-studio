@@ -7,8 +7,6 @@ const DEFAULT_LIMIT = 50
 const sessions = ref<SessionInfo[]>([])
 const currentID = ref<string | null>(null)
 const loading = ref(false)
-/** A conversation shown in the pane without belonging to the active lists (an archived one). */
-const preview = ref<SessionInfo | null>(null)
 
 function upsert(session: SessionInfo) {
   const index = sessions.value.findIndex((item) => item.id === session.id)
@@ -22,11 +20,7 @@ function upsert(session: SessionInfo) {
 }
 
 export function useSessions() {
-  const current = computed(
-    () =>
-      sessions.value.find((item) => item.id === currentID.value) ??
-      (preview.value?.id === currentID.value ? preview.value : null),
-  )
+  const current = computed(() => sessions.value.find((item) => item.id === currentID.value) ?? null)
 
   const sorted = computed(() =>
     [...sessions.value].sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0)),
@@ -35,7 +29,7 @@ export function useSessions() {
   async function load(client: ServerClient, directory?: string, limit = DEFAULT_LIMIT) {
     loading.value = true
     try {
-      const res = await client.listSessions({ directory, limit, archived: false })
+      const res = await client.listSessions({ directory, limit })
       sessions.value = res.data.filter((session) => !session.parentID)
     } finally {
       loading.value = false
@@ -51,7 +45,6 @@ export function useSessions() {
       directory: opts.directory,
       limit: opts.limit ?? DEFAULT_LIMIT,
       search: opts.search,
-      archived: false,
     })
     return res.data.filter((session) => !session.parentID)
   }
@@ -69,33 +62,10 @@ export function useSessions() {
     return session
   }
 
-  /** Archive a conversation so it leaves the active lists but stays recoverable. */
-  async function archive(client: ServerClient, sessionID: string, directory?: string) {
-    await client.updateSession(sessionID, { archived: true }, { directory })
-    sessions.value = sessions.value.filter((item) => item.id !== sessionID)
-    if (currentID.value === sessionID) currentID.value = null
-  }
-
-  async function unarchive(client: ServerClient, sessionID: string, directory?: string) {
-    await client.updateSession(sessionID, { archived: false }, { directory })
-  }
-
   /** Drop a deleted conversation from the active list. */
   function forget(sessionID: string) {
     sessions.value = sessions.value.filter((item) => item.id !== sessionID)
-    if (preview.value?.id === sessionID) preview.value = null
     if (currentID.value === sessionID) currentID.value = null
-  }
-
-  /** Show a conversation in the pane without adding it to the active lists. */
-  function previewSession(session: SessionInfo) {
-    preview.value = session
-    currentID.value = session.id
-  }
-
-  /** Stop showing a previewed conversation (a real selection supersedes it). */
-  function clearPreview() {
-    preview.value = null
   }
 
   async function rename(client: ServerClient, sessionID: string, title: string, directory?: string) {
@@ -132,7 +102,7 @@ export function useSessions() {
           ...sessions.value,
         ]
       }
-    } else if (type === "session.deleted" || type === "session.archived") {
+    } else if (type === "session.deleted") {
       const id = (data.sessionID as string) ?? (data.info as { id?: string } | undefined)?.id
       if (id) {
         sessions.value = sessions.value.filter((item) => item.id !== id)
@@ -143,7 +113,6 @@ export function useSessions() {
 
   function reset() {
     sessions.value = []
-    preview.value = null
     currentID.value = null
   }
 
@@ -152,16 +121,11 @@ export function useSessions() {
     sorted,
     current,
     currentID,
-    preview,
     loading,
     load,
     query,
     create,
-    archive,
-    unarchive,
     forget,
-    previewSession,
-    clearPreview,
     rename,
     applyEvent,
     reset,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Archive, MoreHorizontal, Pencil } from "lucide-vue-next"
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-vue-next"
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -14,9 +14,9 @@ import {
  *
  * The trigger is placed by the parent: the project row pins it to the top-right
  * corner, a chat row centers it vertically. Both callers pass the conversation
- * the menu acts on, so a row can only ever archive the chat it belongs to.
+ * the menu acts on, so a row can only ever delete the chat it belongs to.
  */
-defineEmits<{ rename: []; archive: [] }>()
+defineEmits<{ rename: []; delete: [] }>()
 </script>
 
 <template>
@@ -32,8 +32,8 @@ defineEmits<{ rename: []; archive: [] }>()
           <Pencil :size="14" /> Rename conversation
         </DropdownMenuItem>
         <DropdownMenuSeparator class="opencode-menu-sep" />
-        <DropdownMenuItem class="opencode-menu-item" @select="$emit('archive')">
-          <Archive :size="14" /> Archive conversation
+        <DropdownMenuItem class="opencode-menu-item danger" @select="$emit('delete')">
+          <Trash2 :size="14" /> Delete conversation
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenuPortal>
