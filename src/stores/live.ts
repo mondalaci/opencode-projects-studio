@@ -103,7 +103,7 @@ function apply(event: ServerEvent) {
   lastEventAt.value = Date.now()
   const data = event.data
   sessions.applyEvent(event.type, data)
-  projects.applyEvent(event.type, data)
+  projects.applyEvent(event.type, data, event.location?.directory)
   chat.applyEvent(event.type, data)
 
   // A turn ending is the point the server has persisted the final messages, so

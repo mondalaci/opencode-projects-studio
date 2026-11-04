@@ -367,32 +367,83 @@ export function useProjects() {
     }
   }
 
-  /** Keep a project row on its newest conversation as session events arrive. */
-  function applyEvent(type: string, data: Record<string, unknown> | undefined) {
+  /**
+   * Record a new title for a conversation everywhere it is cached, without a
+   * refetch: the project row that holds it as newest, and its expanded list.
+   *
+   * The directory is preferred, but the v2 `session.renamed` frame carries it on
+   * the envelope rather than the payload, so a caller that did not resolve one
+   * still gets the title applied by matching the id across the cache.
+   */
+  function renameCached(directory: string | undefined, sessionID: string, title: string) {
+    if (directory) {
+      const existing = latest.value[directory]
+      if (existing?.id === sessionID && existing.title !== title) {
+        latest.value = { ...latest.value, [directory]: { ...existing, title } }
+      }
+      const list = chats.value[directory]
+      if (list?.some((item) => item.id === sessionID)) {
+        chats.value = {
+          ...chats.value,
+          [directory]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
+        }
+      }
+      return
+    }
+    for (const [key, session] of Object.entries(latest.value)) {
+      if (session?.id === sessionID && session.title !== title) {
+        latest.value = { ...latest.value, [key]: { ...session, title } }
+      }
+    }
+    for (const [key, list] of Object.entries(chats.value)) {
+      if (list.some((item) => item.id === sessionID)) {
+        chats.value = {
+          ...chats.value,
+          [key]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
+        }
+      }
+    }
+  }
+
+  /**
+   * Keep a project row on its newest conversation as session events arrive.
+   *
+   * `directory` is the frame's own `location`, which the caller reads off the
+   * envelope. The payload alone is not enough: `session.created` carries its
+   * location inside the payload, but `session.renamed`/`session.deleted` carry
+   * it only on the frame.
+   */
+  function applyEvent(type: string, data: Record<string, unknown> | undefined, directory?: string) {
     if (!data) return
+    const dir = directory ?? (data.location as { directory?: string } | undefined)?.directory
     if (type === "session.created" || type === "session.updated") {
-      const directory = (data.location as { directory?: string } | undefined)?.directory
-      if (directory && !data.parentID) {
-        const existing = latest.value[directory]
+      if (dir && !data.parentID) {
+        const existing = latest.value[dir]
         // Only track the newest; the event's partial info is enough to update
         // the row's title/time without a refetch.
         if (existing && existing.id === (data.sessionID as string)) {
           latest.value = {
             ...latest.value,
-            [directory]: { ...existing, title: (data.title as string) ?? existing.title },
+            [dir]: { ...existing, title: (data.title as string) ?? existing.title },
           }
         }
       }
+    } else if (type === "session.renamed") {
+      // An auto-generated title arrives as its own event, not a `session.updated`.
+      // Without this the sidebar keeps showing "Untitled" until the row is opened,
+      // which is what refetches the session.
+      const id = data.sessionID as string | undefined
+      const title = data.title as string | undefined
+      if (id && title) renameCached(dir, id, title)
     } else if (type === "session.deleted") {
       const id = data.sessionID as string | undefined
-      const directory = (data.location as { directory?: string } | undefined)?.directory
       if (id) {
         forgetChat(id)
-        if (directory && latest.value[directory]?.id === id) {
-          const remaining = chats.value[directory]
+        if (dir && latest.value[dir]?.id === id) {
+          const remaining = chats.value[dir]
           latest.value = {
             ...latest.value,
-            [directory]: remaining?.length ? rootsByNewest(remaining)[0] : null,
+            [dir]: remaining?.length ? rootsByNewest(remaining)[0] : null,
           }
         }
       }

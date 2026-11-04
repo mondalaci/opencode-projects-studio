@@ -391,6 +391,12 @@ pending-permission and pending-form lists of the projects that currently hold a
 blocked conversation, and reconnecting rebuilds the whole picture, to repair
 anything missed while offline.
 
+An auto-generated title is one of those changes: the server emits a
+`session.renamed` frame (id + title, located on the frame rather than the
+payload), which updates a project's row and its expanded conversation list in
+place. Without it a fresh conversation sat as "Untitled" until the row was
+opened, which is what refetched the session.
+
 ## Keyboard shortcuts
 
 Hold `Alt` or `Ctrl` to reveal the key badges on the controls they trigger. The

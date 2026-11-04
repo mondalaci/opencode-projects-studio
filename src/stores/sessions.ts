@@ -78,17 +78,22 @@ export function useSessions() {
    * Apply a v2 session event. `session.created`/`session.updated` carry only a
    * partial session (id, title, location, projectID), so the existing row is
    * merged rather than replaced; a full row arrives from the list/get endpoints.
+   * `session.renamed` is the event an auto-generated title arrives on, so the
+   * open conversation's header picks it up without a `getSession` refetch.
    */
   function applyEvent(type: string, data: Record<string, unknown> | undefined) {
     if (!data) return
-    if (type === "session.created" || type === "session.updated") {
+    if (type === "session.created" || type === "session.updated" || type === "session.renamed") {
       const id = data.sessionID as string | undefined
       if (!id) return
       const existing = sessions.value.find((item) => item.id === id)
       const directory = (data.location as { directory?: string } | undefined)?.directory
+      // `session.renamed` is how an auto-generated title arrives; it carries only
+      // the id and the title, so nothing is seeded from it here.
+      const title = (data.title as string) ?? undefined
       if (existing) {
-        upsert({ ...existing, title: (data.title as string) ?? existing.title })
-      } else if (data.parentID === undefined) {
+        if (title && title !== existing.title) upsert({ ...existing, title })
+      } else if (type !== "session.renamed" && data.parentID === undefined) {
         // A brand-new root session: seed a minimal row; the list/get fills it in.
         sessions.value = [
           {

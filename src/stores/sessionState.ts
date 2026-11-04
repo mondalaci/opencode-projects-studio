@@ -192,8 +192,10 @@ export function useSessionState() {
     }
 
     // The same events also keep every project's newest conversation current.
-    if (type === "session.created" || type === "session.updated") {
-      if (directory && directory !== server.directory.value) projects.applyEvent(type, data)
+    // `session.renamed` is how an auto-generated title reaches the sidebar, so a
+    // project that is not the open one updates its row without a refetch too.
+    if (type === "session.created" || type === "session.updated" || type === "session.renamed") {
+      if (directory && directory !== server.directory.value) projects.applyEvent(type, data, directory)
     }
   }
 
