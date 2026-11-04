@@ -20,6 +20,7 @@ import type {
 } from "@/api/types"
 import { parseDataUrl } from "@/utils/file"
 import { questionReplies } from "@/utils/question"
+import { answeredOnlyInReasoning } from "@/utils/truncation"
 
 export type ChatStatus = { type: "idle" } | { type: "busy" } | { type: "retry"; attempt: number; message: string }
 
@@ -34,6 +35,19 @@ export interface SendInput {
    */
   imageModel?: string | null
 }
+
+/**
+ * The prompt sent when a reply arrived only in the reasoning channel. It says
+ * the reply was not delivered rather than "continue", because the model did
+ * write the answer — it just wrote it where the reader cannot see it. Asking it
+ * to continue would let it think it had already answered.
+ */
+const REASONING_ONLY_PROMPT =
+  "Your previous reply was recorded only in the reasoning channel, so it was not shown. " +
+  "Please write the answer again as your visible reply."
+
+/** Messages already asked to restate themselves, so a turn is retried once. */
+const autoContinued = new Set<string>()
 
 const messages = ref<SessionMessage[]>([])
 const status = ref<ChatStatus>({ type: "idle" })
@@ -381,6 +395,35 @@ export function useChat() {
     } finally {
       sending.value = false
     }
+  }
+
+  /**
+   * Ask again when a turn's only content is reasoning.
+   *
+   * Some models put the whole answer in the reasoning channel and finish with
+   * `stop`, which the harness records as a successful turn: the reader sees a
+   * thinking block and no reply. A fresh turn is the only way to get the text,
+   * so it goes through the same `send` the composer uses, on the model and agent
+   * that produced the message.
+   *
+   * One retry per user turn: if the last thing the user said was this prompt,
+   * the model already failed to recover, so it stops rather than looping.
+   */
+  async function continueReasoningOnly(client: ServerClient, sessionID: string, directory?: string) {
+    if (sessionID !== currentSessionID.value || awaitingUser.value) return
+    const last = [...messages.value].reverse().find((item) => item.type === "assistant") as
+      | AssistantMessage
+      | undefined
+    if (!last || autoContinued.has(last.id) || !answeredOnlyInReasoning(last)) return
+    const lastUser = [...messages.value].reverse().find((item) => item.type === "user")
+    if (lastUser?.type === "user" && lastUser.text === REASONING_ONLY_PROMPT) return
+    autoContinued.add(last.id)
+    await send(
+      client,
+      sessionID,
+      { text: REASONING_ONLY_PROMPT, model: last.model, agent: last.agent },
+      directory,
+    )
   }
 
   /**
@@ -856,6 +899,7 @@ export function useChat() {
     open,
     reconcile,
     send,
+    continueReasoningOnly,
     runCommand,
     compact,
     abort,

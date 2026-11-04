@@ -27,3 +27,30 @@ export function endedAtOutputLimit(...finishes: Array<string | null | undefined>
     return LIMIT_FINISHES.has(finish.toLowerCase().replace(/[^a-z]/g, ""))
   })
 }
+
+/**
+ * Whether a settled assistant message carries its answer only in the reasoning
+ * channel: at least one non-empty reasoning block, no visible text, and no tool
+ * call.
+ *
+ * Some models — DeepSeek V4.1 Flash among them — occasionally emit the whole
+ * reply as reasoning and finish with `stop`. The harness records that as a
+ * successful turn, so the reader sees a thinking block and no answer. The shape
+ * is structurally detectable, which is what lets the chat ask for the answer
+ * again instead of leaving the turn looking interrupted.
+ */
+export function answeredOnlyInReasoning(message: {
+  error?: unknown
+  finish?: string | null
+  content: ReadonlyArray<{ type: string; text?: string }>
+}): boolean {
+  if (message.error) return false
+  if (message.finish && message.finish !== "stop") return false
+  let reasoning = false
+  for (const block of message.content) {
+    if (block.type === "tool") return false
+    if (block.type === "text" && block.text?.trim()) return false
+    if (block.type === "reasoning" && block.text?.trim()) reasoning = true
+  }
+  return reasoning
+}

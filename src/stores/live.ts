@@ -173,6 +173,21 @@ async function resync(client: ServerClient) {
 function onStreamEvent(event: ServerEvent) {
   apply(event)
   post({ t: "event", key: activeKey, event })
+  // A turn that ended with only reasoning has no answer to show. Only the
+  // leader asks for it again, so the tabs sharing the stream do not each send
+  // the same prompt. A stopped or failed turn is left alone: the reader asked
+  // for it to end, or it has its own error to show.
+  if (event.type === "session.execution.succeeded" || event.type === "session.idle") {
+    const outcome =
+      event.type === "session.idle"
+        ? ((event.data?.outcome as string | undefined) ?? "succeeded")
+        : "succeeded"
+    const client = activeClient
+    const sessionID = event.data?.sessionID as string | undefined
+    if (outcome === "succeeded" && client && sessionID) {
+      void chat.continueReasoningOnly(client, sessionID, server.directory.value)
+    }
+  }
 }
 
 function openStream() {
