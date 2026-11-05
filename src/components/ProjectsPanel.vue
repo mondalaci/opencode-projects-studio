@@ -15,7 +15,7 @@ import { filterTarget, stopFilter } from "@/stores/filter"
 import type { ProjectEntry } from "@/stores/projects"
 import { useSessionState } from "@/stores/sessionState"
 import { openRequests } from "@/stores/shortcuts"
-import { relativeTime } from "@/utils/format"
+import { formatCost, formatCostCompact, relativeTime } from "@/utils/format"
 import { fuzzyMatch } from "@/utils/fuzzy"
 
 const app = useApp()
@@ -29,6 +29,7 @@ const {
   chatsFor,
   isChatsLoading,
   countFor,
+  costFor,
   toggleExpanded,
 } = app.projects
 const { openProject, deleteSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
@@ -210,6 +211,16 @@ function conversationCount(entry: ProjectEntry) {
 function countTitle(entry: ProjectEntry) {
   const count = conversationCount(entry)
   return count === 1 ? "1 conversation" : `${count} conversations`
+}
+
+/** How much a project has spent in total, or `undefined` until it is known. */
+function projectCost(entry: ProjectEntry) {
+  return costFor(entry.directory)
+}
+
+/** The tooltip for a project's total spend. */
+function costTitle(entry: ProjectEntry) {
+  return `Total cost: ${formatCost(projectCost(entry))}`
 }
 
 /** The state dot for a project's conversation. */
@@ -455,6 +466,7 @@ function onKeydown(event: KeyboardEvent) {
               class="archived-badge"
               title="Archived — this project's folder no longer exists"
             >archived</span>
+            <span v-if="projectCost(entry)" class="cost" :title="costTitle(entry)">{{ formatCostCompact(projectCost(entry)) }}</span>
             <span
               v-if="conversationCount(entry)"
               class="count"
@@ -761,6 +773,16 @@ function onKeydown(event: KeyboardEvent) {
   font-variant-numeric: tabular-nums;
 }
 .project.active .count {
+  color: var(--text-muted);
+}
+/* The project's total spend, between the name and the conversation tally. */
+.cost {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.project.active .cost {
   color: var(--text-muted);
 }
 /* An archived project's folder is gone: the row stays so its past

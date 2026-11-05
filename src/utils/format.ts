@@ -76,6 +76,19 @@ export function formatCost(value?: number): string {
   return `$${value.toFixed(2)}`
 }
 
+/**
+ * A compact cost for the sidebar rows, where the figure shares a narrow line
+ * with the project name: whole dollars once the amount is large enough for
+ * cents to be noise, and a shorter tail for the sub-cent spends. The exact
+ * figure belongs in the caller's tooltip, via `formatCost`.
+ */
+export function formatCostCompact(value?: number): string {
+  if (!value) return "$0"
+  if (value >= 10) return `$${Math.round(value)}`
+  if (value >= 0.01) return `$${value.toFixed(2)}`
+  return `$${value.toFixed(3)}`
+}
+
 /** A short human summary for a tool call, used in tool headers. */
 export function toolSummary(tool: string, input: Record<string, unknown> | undefined): string {
   if (!input) return ""

@@ -14,13 +14,14 @@ conversations:
 
 - **Projects sidebar** — every project the server knows about, each showing one
   conversation: its newest. The list is ordered by most recent activity, and the
-  newest conversation of the busiest project is what opens on launch. The
-  chevron on a project row expands it to list that project's conversations
-  (newest first); `Alt`+`L` toggles the current project's row. Each row's `⋯`
-  menu hides the project or deletes it for good (behind a confirmation), and a
-  **Hidden** section folds away at the bottom of the list to bring one back. Each
-  conversation's own `⋯` menu renames it or deletes it for good, also behind a
-  confirmation.
+  newest conversation of the busiest project is what opens on launch. Each row
+  also carries the project's total spend, subagent sessions included, which grows
+  as turns finish. The chevron on a project row expands it to list that project's
+  conversations (newest first); `Alt`+`L` toggles the current project's row. Each
+  row's `⋯` menu hides the project or deletes it for good (behind a
+  confirmation), and a **Hidden** section folds away at the bottom of the list to
+  bring one back. Each conversation's own `⋯` menu renames it or deletes it for
+  good, also behind a confirmation.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
   beside the title and the staged ones under their own heading. It re-scans the

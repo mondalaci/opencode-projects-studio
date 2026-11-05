@@ -35,6 +35,8 @@ const chats = ref<Record<string, SessionInfo[]>>({})
 const chatsPending = ref<Record<string, true>>({})
 /** How many conversations each project holds, once it has been counted. */
 const counts = ref<Record<string, number>>({})
+/** Total amount (USD) each project has spent, once it has been read. */
+const costs = ref<Record<string, number>>({})
 
 /** A project together with the conversation the sidebar shows for it. */
 export interface ProjectEntry {
@@ -80,32 +82,47 @@ function rootsByNewest(list: SessionInfo[]): SessionInfo[] {
     .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
 }
 
+/** A project's conversations and what it has spent in total. */
+interface ProjectSessions {
+  /** Root conversations only, newest first — the rows the sidebar lists. */
+  roots: SessionInfo[]
+  /** The project's whole spend, subagent sessions included. */
+  cost: number
+}
+
 /**
- * Every root conversation of a project, newest first.
+ * Every session of a project, reduced to the root conversations (newest first)
+ * and the project's total cost.
  *
  * A directory can hold more conversations than one page, so the cursor is
- * followed to the end. Subagents are excluded at the server with
- * `parentID=null`, so the pages carry only the conversations the sidebar lists
- * and counts.
+ * followed to the end. The pages carry subagent sessions as well as roots: a
+ * subagent records its own `cost` and the parent does not roll it up, so the
+ * project's total is the sum over *every* session while the sidebar lists — and
+ * counts — only the roots.
  */
-async function fetchRoots(client: ServerClient, directory: string): Promise<SessionInfo[]> {
+async function fetchSessions(client: ServerClient, directory: string): Promise<ProjectSessions> {
   const all = new Map<string, SessionInfo>()
+  const seen = new Set<string>()
+  let cost = 0
   let cursor: string | undefined
   for (let page = 0; page < CHATS_MAX_PAGES; page++) {
     const res = await client.listSessions({
       directory,
       limit: CHATS_PAGE_SIZE,
-      parentID: "null",
       cursor,
     })
     for (const session of res.data) {
+      // A cursor should not repeat a row, but the total is a sum, so guard it.
+      if (seen.has(session.id)) continue
+      seen.add(session.id)
       if (!session.parentID) all.set(session.id, session)
+      cost += session.cost ?? 0
     }
     const next = res.cursor?.next
     if (!next || res.data.length === 0) break
     cursor = next
   }
-  return rootsByNewest([...all.values()])
+  return { roots: rootsByNewest([...all.values()]), cost }
 }
 
 /** Run `worker` over `items` with at most `limit` concurrent calls. */
@@ -248,12 +265,22 @@ export function useProjects() {
       delete next[directory]
       counts.value = next
     }
+    if (directory in costs.value) {
+      const next = { ...costs.value }
+      delete next[directory]
+      costs.value = next
+    }
     collapse(directory)
   }
 
   /** How many conversations a project holds, or `undefined` until it is counted. */
   function countFor(directory: string): number | undefined {
     return counts.value[directory]
+  }
+
+  /** A project's total spend, or `undefined` until it has been read. */
+  function costFor(directory: string): number | undefined {
+    return costs.value[directory]
   }
 
   /** Record a conversation this client just created, without a refetch. */
@@ -284,9 +311,10 @@ export function useProjects() {
     if (chatsPending.value[directory]) return
     chatsPending.value = { ...chatsPending.value, [directory]: true }
     try {
-      const roots = await fetchRoots(client, directory)
+      const { roots, cost } = await fetchSessions(client, directory)
       chats.value = { ...chats.value, [directory]: roots }
       counts.value = { ...counts.value, [directory]: roots.length }
+      costs.value = { ...costs.value, [directory]: cost }
     } catch {
       /* leave whatever was there (usually nothing) in place */
     } finally {
@@ -331,23 +359,26 @@ export function useProjects() {
       const results = await mapLimit(list, 6, async (project) => {
         try {
           // The whole list is read, not just the newest page, because the row
-          // carries the project's conversation count as well as its newest one.
-          const roots = await fetchRoots(client, project.canonical)
-          return [project.canonical, roots] as const
+          // carries the project's conversation count and total cost as well as
+          // its newest conversation.
+          return [project.canonical, await fetchSessions(client, project.canonical)] as const
         } catch {
-          return [project.canonical, [] as SessionInfo[]] as const
+          return [project.canonical, { roots: [] as SessionInfo[], cost: 0 }] as const
         } finally {
           pending.value = Math.max(0, pending.value - 1)
         }
       })
       const next: Record<string, SessionInfo | null> = {}
       const nextCounts: Record<string, number> = {}
-      for (const [worktree, roots] of results) {
-        next[worktree] = roots[0] ?? null
-        nextCounts[worktree] = roots.length
+      const nextCosts: Record<string, number> = {}
+      for (const [worktree, sessions] of results) {
+        next[worktree] = sessions.roots[0] ?? null
+        nextCounts[worktree] = sessions.roots.length
+        nextCosts[worktree] = sessions.cost
       }
       latest.value = next
       counts.value = nextCounts
+      costs.value = nextCosts
       loaded.value = true
     } finally {
       loading.value = false
@@ -355,13 +386,14 @@ export function useProjects() {
     }
   }
 
-  /** Re-read one project's newest conversation and count (after a change, say). */
+  /** Re-read one project's newest conversation, count and total cost. */
   async function refreshOne(client: ServerClient, target: string) {
     if (target === ROOT_DIRECTORY) return
     try {
-      const roots = await fetchRoots(client, target)
+      const { roots, cost } = await fetchSessions(client, target)
       latest.value = { ...latest.value, [target]: roots[0] ?? null }
       counts.value = { ...counts.value, [target]: roots.length }
+      costs.value = { ...costs.value, [target]: cost }
     } catch {
       /* leave the previous value in place */
     }
@@ -447,6 +479,14 @@ export function useProjects() {
           }
         }
       }
+    } else if (type === "session.step.ended") {
+      // A step's cost is incremental and a session's total is their sum, so the
+      // project grows by each step as it finishes. Subagent steps count too:
+      // their cost sits on the child session, which the parent does not roll up.
+      const cost = data.cost
+      if (dir && typeof cost === "number" && cost !== 0 && costs.value[dir] !== undefined) {
+        costs.value = { ...costs.value, [dir]: costs.value[dir] + cost }
+      }
     }
   }
 
@@ -459,6 +499,7 @@ export function useProjects() {
     chats.value = {}
     chatsPending.value = {}
     counts.value = {}
+    costs.value = {}
   }
 
   return {
@@ -480,6 +521,7 @@ export function useProjects() {
     chatsFor,
     isChatsLoading,
     countFor,
+    costFor,
     isArchived,
     recordCreated,
     loadChats,
