@@ -70,6 +70,12 @@ export function formatTokens(value?: number): string {
   return String(value)
 }
 
+/** Generated tokens per second, e.g. `42.5 tok/s`; `—` when there is no rate. */
+export function formatTokensPerSecond(value?: number): string {
+  if (!value || value <= 0) return "—"
+  return value >= 100 ? `${Math.round(value)} tok/s` : `${value.toFixed(1)} tok/s`
+}
+
 export function formatCost(value?: number): string {
   if (!value) return "$0"
   if (value < 0.01) return `$${value.toFixed(4)}`
