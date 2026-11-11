@@ -106,6 +106,61 @@ function decorateCode() {
   })
 }
 
+/**
+ * The position just past a code block's last character, ignoring the newline that
+ * closes its final line (the one marked appends to every fenced block).
+ */
+function codeTextEnd(code: Element): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT)
+  let last: Text | null = null
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) last = node as Text
+  if (!last) return null
+  let offset = last.data.length
+  while (offset > 0 && last.data[offset - 1] === "\n") offset--
+  return { node: last, offset }
+}
+
+/**
+ * Take a code block's trailing newline — and the copy button the browser sweeps
+ * along with it — back out of the selection.
+ *
+ * A triple click on a block's last line selects through to the start of the next
+ * block, so what the reader picked up carried a newline nobody selected: pasting
+ * a command ran it and then left an empty line. The copy button sits after the
+ * `<code>` in the DOM, so it fell inside the range too, and anything that renders
+ * rich content turned it into an object placeholder.
+ *
+ * Pulling the range's end back to the code's own last character fixes the
+ * clipboard and the X11 primary selection (what a middle click pastes) at once,
+ * and leaves both clipboard flavours correct — overriding `clipboardData` would
+ * have to give up the HTML one. Only a newline leaves the visible selection,
+ * which is invisible.
+ *
+ * A selection that reaches past the block for any other reason is left as the
+ * reader made it: the text between the code and wherever they stopped has to be
+ * blank for this to be the browser's overreach rather than their choice.
+ */
+function trimCodeSelection() {
+  const selection = document.getSelection()
+  if (!selection || selection.isCollapsed) return
+  const range = selection.getRangeAt(0)
+  const start =
+    range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement
+  const code = start?.closest("pre code")
+  if (!code) return
+  const end = codeTextEnd(code)
+  if (!end || range.comparePoint(end.node, end.offset) > 0) return
+  const gap = document.createRange()
+  gap.setStart(end.node, end.offset)
+  gap.setEnd(range.endContainer, range.endOffset)
+  if (gap.toString().trim()) return
+  const trimmed = document.createRange()
+  trimmed.setStart(range.startContainer, range.startOffset)
+  trimmed.setEnd(end.node, end.offset)
+  selection.removeAllRanges()
+  selection.addRange(trimmed)
+}
+
 /* ---------------------------------- Mermaid --------------------------------- */
 
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null
@@ -226,5 +281,5 @@ watch([html, () => props.streaming], ([, streaming], [, prevStreaming]) => {
 </script>
 
 <template>
-  <div ref="root" class="markdown" v-html="html" @click="onImageClick"></div>
+  <div ref="root" class="markdown" v-html="html" @click="onImageClick" @copy="trimCodeSelection" @mouseup="trimCodeSelection"></div>
 </template>

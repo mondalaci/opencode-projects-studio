@@ -111,6 +111,8 @@ async function copy(text: string, key: string) {
   line-height: 1.6;
   color: var(--text);
 }
+/* The same reasoning as the code block's copy button: a control beside the text
+   must not be swept into a triple-click selection, or the copy carries its icon. */
 .copy-btn {
   display: inline-flex;
   align-items: center;
@@ -124,6 +126,7 @@ async function copy(text: string, key: string) {
   background: var(--bg-elevated);
   color: var(--text-muted);
   cursor: pointer;
+  user-select: none;
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }

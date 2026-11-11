@@ -273,10 +273,15 @@ a {
 .markdown .code-block pre {
   margin: 0;
 }
+/* The button is chrome, not code, so it must stay out of the selection. A triple
+   click on the last line of a block selects through to the next paragraph and
+   sweeps this button along with it, and the copy then carried the button's SVG
+   as an object placeholder plus a blank line that was never part of the code. */
 .markdown .code-copy {
   position: absolute;
   top: 8px;
   right: 8px;
+  user-select: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
