@@ -5,8 +5,8 @@ import DiffOverview from "./DiffOverview.vue"
 import EditorHeader from "./EditorHeader.vue"
 import Spinner from "./Spinner.vue"
 import { useGit } from "@/stores/git"
-import { expandToFullFile, hunksToRows, splitPath, type DiffLine, type FileRow } from "@/utils/diff"
-import { highlightLines, languageForPath } from "@/utils/highlight"
+import { changedRanges, expandToFullFile, hunksToRows, splitPath, toSplitRows, type ChangeRange, type DiffLine, type FileRow } from "@/utils/diff"
+import { escapeHtml, highlightLines, languageForPath, wrapHtmlRanges } from "@/utils/highlight"
 
 const git = useGit()
 const { openDiff, selection } = git
@@ -75,15 +75,41 @@ const highlighted = computed(() => {
 })
 
 /**
- * The highlighted fragment for one cell, or null to render plain text. The side
- * matters: a deleted line only exists on the old side, an added one on the new.
+ * The characters that changed inside each replaced row — the word-level half of
+ * the change, on top of the row tint the whole line already carries. Every row
+ * pairs a deletion with the addition that replaced it, which is the pairing the
+ * split view stacks side by side and the unified view shows one above the other.
+ */
+const intra = computed(() => {
+  const ranges = new Map<DiffLine, ChangeRange[]>()
+  const shown = view.value === "split" ? rows.value.split : toSplitRows(rows.value.unified)
+  for (const row of shown) {
+    if (row.kind !== "line" || row.left?.type !== "del" || row.right?.type !== "add") continue
+    const change = changedRanges(row.left.text, row.right.text)
+    if (change.old.length) ranges.set(row.left, change.old)
+    if (change.new.length) ranges.set(row.right, change.new)
+  }
+  return ranges
+})
+
+/**
+ * The fragment for one cell, or null to render plain text. Syntax highlighting
+ * comes first and the changed characters are marked inside it; a line the
+ * highlighter passed over is escaped instead, so the marks can still go in. The
+ * side matters: a deleted line only exists on the old side, an added one on the
+ * new.
  */
 function lineHtml(line: DiffLine | null | undefined, side: "old" | "new"): string | null {
+  if (!line || line.type === "note" || line.type === "gap") return null
+
   const maps = highlighted.value
-  if (!maps || !line || line.type === "note" || line.type === "gap") return null
   const number = side === "old" ? line.oldNo : line.newNo
-  if (number === null || number === undefined) return null
-  return (side === "old" ? maps.old : maps.new)[number - 1] ?? null
+  const base =
+    maps && number !== null && number !== undefined ? (side === "old" ? maps.old : maps.new)[number - 1] ?? null : null
+
+  const ranges = intra.value.get(line)
+  if (!ranges?.length) return base
+  return wrapHtmlRanges(base ?? escapeHtml(line.text), ranges)
 }
 
 /** The cell class for a line, which is also what tints its line-number gutter. */
@@ -386,6 +412,18 @@ td.line-add {
 td.line-del {
   background: rgba(239, 107, 107, 0.13);
   color: var(--text);
+}
+/*
+ * The characters that changed inside a replaced line, a step deeper than the
+ * row's tint so the edit itself stands out from the rest of the line. The spans
+ * come from injected `v-html`, so the rule has to pierce the scope attribute the
+ * component's own elements carry.
+ */
+.diff-view :deep(.intra) {
+  background: rgba(53, 192, 106, 0.42);
+}
+.diff-view :deep(td.line-del .intra) {
+  background: rgba(239, 107, 107, 0.42);
 }
 td.line-empty {
   background: repeating-linear-gradient(

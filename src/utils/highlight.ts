@@ -1,4 +1,5 @@
 import hljs from "highlight.js/lib/common"
+import type { ChangeRange } from "./diff"
 
 /**
  * Syntax highlighting for the diff and file views.
@@ -8,6 +9,9 @@ import hljs from "highlight.js/lib/common"
  * isolation would colour it as plain code. The highlighted HTML is then split
  * back into lines — with the tags that straddle a line break closed and reopened,
  * so every line is a self-contained fragment that can be rendered on its own.
+ *
+ * The module also wraps that HTML (or plain escaped text) in the spans the diff
+ * uses to mark the characters that changed inside a line.
  */
 
 /** Beyond this, highlighting costs more than it is worth. */
@@ -174,4 +178,80 @@ export function highlightLines(code: string, language: string | null): string[] 
   } catch {
     return null
   }
+}
+
+/** Escape text so it can be handed to `v-html` exactly as it stands. */
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+/** An entity highlight.js writes, or one of ours: `&amp;`, `&quot;`, `&#x27;`. */
+const ENTITY_RE = /^&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);$/
+
+/**
+ * Wrap the given character ranges of an HTML fragment in
+ * `<span class="intra">`, which is how the diff marks the characters that
+ * changed inside a line.
+ *
+ * The fragment is highlighted — or escaped — code, so the ranges are counted
+ * over the text it renders as, not over the markup: tags pass through untouched
+ * and an entity counts as the single character it stands for. A range that runs
+ * from one highlight span into the next is closed at that boundary and reopened
+ * on the other side, because a mark straddling the two would not nest.
+ */
+export function wrapHtmlRanges(html: string, ranges: ChangeRange[], className = "intra"): string {
+  const spans = ranges.filter((range) => range.end > range.start)
+  if (!spans.length) return html
+
+  const openTag = `<span class="${className}">`
+  let out = ""
+  let offset = 0
+  let index = 0
+  let marked = false
+
+  const setMark = (want: boolean) => {
+    if (want === marked) return
+    out += want ? openTag : "</span>"
+    marked = want
+  }
+
+  for (let position = 0; position < html.length; ) {
+    const char = html[position]
+
+    if (char === "<") {
+      const end = html.indexOf(">", position)
+      if (end === -1) {
+        out += html.slice(position)
+        break
+      }
+      // Never leave the mark open across a tag; the next character reopens it if
+      // the range reaches that far.
+      if (html[position + 1] === "/") setMark(false)
+      out += html.slice(position, end + 1)
+      position = end + 1
+      continue
+    }
+
+    let text = char
+    if (char === "&") {
+      const end = html.indexOf(";", position)
+      const entity = end === -1 ? "" : html.slice(position, end + 1)
+      if (ENTITY_RE.test(entity)) {
+        text = entity
+        position = end + 1
+      } else {
+        position++
+      }
+    } else {
+      position++
+    }
+
+    while (index < spans.length && offset >= spans[index].end) index++
+    setMark(index < spans.length && offset >= spans[index].start)
+    out += text
+    offset++
+  }
+
+  setMark(false)
+  return out
 }

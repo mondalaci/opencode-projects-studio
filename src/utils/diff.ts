@@ -3,7 +3,9 @@
  *
  * The patch text comes from `git diff`, so it is already in unified format; the
  * job here is to turn it into rows a viewer can render with line numbers, both
- * as a single column ("unified") and as old/new columns ("split").
+ * as a single column ("unified") and as old/new columns ("split"). The last
+ * piece is the word-level diff of a replaced pair, which is what lets the viewer
+ * mark the characters that changed inside the lines.
  */
 
 export type DiffLineType = "context" | "add" | "del" | "note" | "gap"
@@ -184,6 +186,155 @@ export function toSplitRows(lines: DiffLine[]): SplitRow[] {
   }
 
   return rows
+}
+
+/** A half-open `[start, end)` span of characters within a line. */
+export interface ChangeRange {
+  start: number
+  end: number
+}
+
+/** A word, a run of whitespace, or a single other character. */
+const TOKEN_RE = /\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g
+
+/** Past this many token pairs, the quadratic walk costs more than it is worth. */
+const MAX_TOKEN_PRODUCT = 60_000
+
+/** Past this share on both sides, the row's own tint says as much as marks would. */
+const MAX_CHANGED_RATIO = 0.6
+
+interface Token {
+  text: string
+  start: number
+}
+
+function tokenize(text: string): Token[] {
+  const tokens: Token[] = []
+  TOKEN_RE.lastIndex = 0
+  for (let match = TOKEN_RE.exec(text); match; match = TOKEN_RE.exec(text)) {
+    tokens.push({ text: match[0], start: match.index })
+  }
+  return tokens
+}
+
+/** The span the tokens cover, which is contiguous because they are in order. */
+function spanOf(tokens: Token[]): ChangeRange | null {
+  if (!tokens.length) return null
+  const first = tokens[0]
+  const last = tokens[tokens.length - 1]
+  return { start: first.start, end: last.start + last.text.length }
+}
+
+/**
+ * Where the two lines of a replaced pair differ, as character ranges on each
+ * side.
+ *
+ * A character diff of the pair would mark everything between the first change
+ * and the last, so the sides are diffed as tokens instead — a word, a run of
+ * whitespace or a single other character each — and only the tokens that did not
+ * survive are marked. Each run of those is then narrowed to the characters it
+ * does not share with the run that replaced it, so `count` → `counts` marks the
+ * `s` alone.
+ *
+ * Nothing is marked when the lines are mostly different, where marks would only
+ * repeat what the row's tint already says, or when the lines are too long for
+ * the token diff to be worth running.
+ */
+export function changedRanges(oldText: string, newText: string): { old: ChangeRange[]; new: ChangeRange[] } {
+  const none = { old: [] as ChangeRange[], new: [] as ChangeRange[] }
+  if (!oldText || !newText || oldText === newText) return none
+
+  const oldTokens = tokenize(oldText)
+  const newTokens = tokenize(newText)
+  if (!oldTokens.length || !newTokens.length) return none
+  if (oldTokens.length * newTokens.length > MAX_TOKEN_PRODUCT) return none
+
+  // The longest common subsequence of the tokens, so the marks land on the
+  // tokens that changed rather than on every token between them.
+  const width = newTokens.length + 1
+  const lcs = new Uint32Array((oldTokens.length + 1) * width)
+  for (let i = oldTokens.length - 1; i >= 0; i--) {
+    for (let j = newTokens.length - 1; j >= 0; j--) {
+      lcs[i * width + j] =
+        oldTokens[i].text === newTokens[j].text
+          ? lcs[(i + 1) * width + j + 1] + 1
+          : Math.max(lcs[(i + 1) * width + j], lcs[i * width + j + 1])
+    }
+  }
+
+  type Op = { kind: "equal" | "del" | "ins"; index: number }
+  const ops: Op[] = []
+  let i = 0
+  let j = 0
+  while (i < oldTokens.length && j < newTokens.length) {
+    if (oldTokens[i].text === newTokens[j].text) {
+      ops.push({ kind: "equal", index: i })
+      i++
+      j++
+    } else if (lcs[(i + 1) * width + j] >= lcs[i * width + j + 1]) {
+      ops.push({ kind: "del", index: i })
+      i++
+    } else {
+      ops.push({ kind: "ins", index: j })
+      j++
+    }
+  }
+  while (i < oldTokens.length) ops.push({ kind: "del", index: i++ })
+  while (j < newTokens.length) ops.push({ kind: "ins", index: j++ })
+
+  const oldRanges: ChangeRange[] = []
+  const newRanges: ChangeRange[] = []
+  let k = 0
+  while (k < ops.length) {
+    if (ops[k].kind === "equal") {
+      k++
+      continue
+    }
+
+    // A run only one side has, next to the run that replaced it: the two are
+    // compared together so their shared characters can be trimmed off.
+    const removed: Token[] = []
+    const added: Token[] = []
+    while (k < ops.length && ops[k].kind !== "equal") {
+      if (ops[k].kind === "del") removed.push(oldTokens[ops[k].index])
+      else added.push(newTokens[ops[k].index])
+      k++
+    }
+
+    let oldSpan = spanOf(removed)
+    let newSpan = spanOf(added)
+    if (oldSpan && newSpan) {
+      const oldEnd = oldSpan.end
+      const newEnd = newSpan.end
+      let prefix = 0
+      while (
+        oldSpan.start + prefix < oldEnd &&
+        newSpan.start + prefix < newEnd &&
+        oldText[oldSpan.start + prefix] === newText[newSpan.start + prefix]
+      ) {
+        prefix++
+      }
+      let suffix = 0
+      while (
+        oldEnd - suffix - 1 >= oldSpan.start + prefix &&
+        newEnd - suffix - 1 >= newSpan.start + prefix &&
+        oldText[oldEnd - suffix - 1] === newText[newEnd - suffix - 1]
+      ) {
+        suffix++
+      }
+      oldSpan = { start: oldSpan.start + prefix, end: oldEnd - suffix }
+      newSpan = { start: newSpan.start + prefix, end: newEnd - suffix }
+    }
+
+    if (oldSpan && oldSpan.end > oldSpan.start) oldRanges.push(oldSpan)
+    if (newSpan && newSpan.end > newSpan.start) newRanges.push(newSpan)
+  }
+
+  const oldChanged = oldRanges.reduce((total, range) => total + (range.end - range.start), 0)
+  const newChanged = newRanges.reduce((total, range) => total + (range.end - range.start), 0)
+  if (oldChanged > oldText.length * MAX_CHANGED_RATIO && newChanged > newText.length * MAX_CHANGED_RATIO) return none
+
+  return { old: oldRanges, new: newRanges }
 }
 
 /** `+3 −1`-style counts for a parsed patch. */

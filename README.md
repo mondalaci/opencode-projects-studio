@@ -442,6 +442,11 @@ only the hunks.
   counterpart.
 - Changed rows are tinted across gutter and code, with a saturated change bar on
   the gutter's outer edge.
+- Within a replaced pair the characters that actually changed carry a deeper tint
+  than the row's, so `count` → `counts` marks the `s` alone and a one-word edit
+  reads at a glance. The lines are compared as tokens, not characters, so the
+  untouched middle of a line is left alone; lines that differ wholesale keep the
+  row tint by itself.
 - The **change map** down the right edge compresses the whole file into a strip:
   red where lines went, green where they arrived (left and right halves
   respectively, so a replaced line shows both), with the visible part marked.
