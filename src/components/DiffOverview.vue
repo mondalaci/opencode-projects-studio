@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue"
-import { drawChangeMap, type ChangeMark } from "@/utils/changeMap"
+import { drawChangeMap, type ChangeMark, type ChangeSpan } from "@/utils/changeMap"
 
 /**
  * The change map beside the diff: the whole file compressed into a narrow strip
@@ -9,6 +9,12 @@ import { drawChangeMap, type ChangeMark } from "@/utils/changeMap"
  *
  * The strip is also a scrubber: clicking or dragging it moves the diff, and the
  * translucent block shows which part of the file is on screen.
+ *
+ * Both the marks and the block are placed on the scrollbar's scale, so the two
+ * line up: the block sits at `scrollTop / scrollHeight`, and each mark at the
+ * fraction its own rendered row occupies. Rows are not a fixed height — a long
+ * line wraps to two or three — so a mark placed by row number would drift away
+ * from the block as soon as anything above it wrapped.
  */
 const props = defineProps<{
   /** One entry per rendered row of the diff, in order. */
@@ -29,12 +35,38 @@ function colours() {
   }
 }
 
+/**
+ * Where each rendered row sits in the scrollable content, as fractions of its
+ * full height — the same space the viewport block is positioned in. Measuring
+ * the rows themselves is what keeps a wrapped row from being counted as one.
+ *
+ * Null until the rows are rendered, or if they do not match the marks (a stale
+ * frame), in which case the caller skips the draw and picks it up next time.
+ */
+function rowSpans(): ChangeSpan[] | null {
+  const body = props.body
+  if (!body) return null
+  const rows = body.querySelectorAll<HTMLElement>("tr")
+  if (rows.length !== props.marks.length) return null
+  const total = body.scrollHeight
+  if (!total) return null
+  // The content origin in viewport coordinates, so a row's top can be read off
+  // its rect without caring where the body is currently scrolled.
+  const origin = body.getBoundingClientRect().top - body.scrollTop
+  return Array.from(rows, (row) => {
+    const rect = row.getBoundingClientRect()
+    return { top: (rect.top - origin) / total, height: rect.height / total }
+  })
+}
+
 function draw() {
   const element = canvas.value
   if (!element) return
   const width = element.clientWidth
   const height = element.clientHeight
   if (!width || !height) return
+  const spans = rowSpans()
+  if (!spans) return
 
   const dpr = window.devicePixelRatio || 1
   element.width = Math.round(width * dpr)
@@ -43,7 +75,7 @@ function draw() {
   if (!ctx) return
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-  drawChangeMap(ctx, width, height, props.marks, colours())
+  drawChangeMap(ctx, width, height, props.marks, spans, colours())
 }
 
 /** Track which part of the file the diff is showing. */
@@ -113,7 +145,9 @@ watch(
     draw()
     syncViewport()
   },
-  { immediate: true },
+  // Post-flush so the rows are in the DOM before they are measured; the initial
+  // call has no body yet and no-ops, then the watcher fires once it appears.
+  { immediate: true, flush: "post" },
 )
 
 watch(
@@ -122,6 +156,7 @@ watch(
     draw()
     syncViewport()
   },
+  { flush: "post" },
 )
 
 onBeforeUnmount(() => {
