@@ -50,6 +50,12 @@ function onScroll() {
     programmatic = false
     return
   }
+  // While the thread is loading, the spinner stands in for the conversation and
+  // the area is shorter than it was: the offset is clamped, and the viewport then
+  // reports itself at the bottom from anywhere. That is the reload talking, not
+  // the reader returning, and re-pinning on it would drag a long conversation to
+  // its end as soon as the messages came back.
+  if (loading.value) return
   // Any non-programmatic scroll that leaves the bottom detaches immediately, so
   // even a small scroll-up during streaming sticks instead of being pulled back.
   // Re-attach only when the user returns to (near) the bottom themselves.
