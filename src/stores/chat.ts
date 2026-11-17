@@ -51,6 +51,21 @@ const autoContinued = new Set<string>()
 
 const messages = ref<SessionMessage[]>([])
 const status = ref<ChatStatus>({ type: "idle" })
+
+/**
+ * The id of the newest message when the running turn began.
+ *
+ * What the turn's own reply is told apart by: a message after this mark appeared
+ * while the turn was running, so the turn is writing it, while one at or before
+ * it belongs to a turn that has already ended. The thread hangs the caret on the
+ * reply the turn is writing, and that cannot be read off the message list alone
+ * — a turn may start without adding anything to it (a slash command), and a
+ * prompt may sit at the end of it with no reply of its own yet to belong to.
+ *
+ * Null when the turn was adopted rather than started here, since where it began
+ * is not something this view witnessed.
+ */
+const turnAnchor = ref<string | null>(null)
 const loading = ref(false)
 const sending = ref(false)
 const error = ref<string | null>(null)
@@ -288,6 +303,10 @@ export function useChat() {
     streamIndex.clear()
     todos.value = []
     status.value = { type: "idle" }
+    // A session being opened is a turn adopted, not one started here: where it
+    // began is not something this view witnessed, so nothing is marked and the
+    // thread reads the running turn's reply off the message itself.
+    turnAnchor.value = null
     try {
       const [list, perms, formList, session, active] = await Promise.all([
         client.allMessages(sessionID, { directory }),
@@ -399,7 +418,7 @@ export function useChat() {
         time: { created: Date.now() },
       }
       addUserMessage(optimistic)
-      status.value = { type: "busy" }
+      beginTurn()
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
       throw err
@@ -466,7 +485,7 @@ export function useChat() {
         },
         { directory },
       )
-      status.value = { type: "busy" }
+      beginTurn()
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
       throw err
@@ -481,7 +500,7 @@ export function useChat() {
     error.value = null
     try {
       await client.compact(sessionID, { directory })
-      status.value = { type: "busy" }
+      beginTurn()
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
       throw err
@@ -606,6 +625,30 @@ export function useChat() {
     )
   }
 
+  /** The newest message's id, or null in an empty conversation. */
+  function newestID(): string | null {
+    return messages.value[messages.value.length - 1]?.id ?? null
+  }
+
+  /**
+   * Mark where a turn began, if nothing was running when it did.
+   *
+   * Every announcement of a turn comes through here — the send paths in this
+   * store and the server's `session.execution.started` — and a turn already in
+   * flight keeps the mark it started with. Re-marking one that is running would
+   * move the mark past the reply being written, and the caret hangs on whatever
+   * the turn has written since it began.
+   */
+  function markTurnStart() {
+    if (status.value.type === "idle") turnAnchor.value = newestID()
+  }
+
+  /** Start a turn: busy, and marked at the point it started from. */
+  function beginTurn() {
+    markTurnStart()
+    status.value = { type: "busy" }
+  }
+
   function completeTurn(outcome: "succeeded" | "failed" | "interrupted") {
     status.value = { type: "idle" }
     settleUnfinishedTools(outcome)
@@ -632,7 +675,7 @@ export function useChat() {
 
     switch (type) {
       case "session.execution.started":
-        if (isCurrent) status.value = { type: "busy" }
+        if (isCurrent) beginTurn()
         break
       case "session.execution.succeeded":
       case "session.execution.failed":
@@ -886,6 +929,7 @@ export function useChat() {
     messages.value = []
     streamIndex.clear()
     status.value = { type: "idle" }
+    turnAnchor.value = null
     error.value = null
     permissions.value = []
     forms.value = []
@@ -896,6 +940,7 @@ export function useChat() {
     messages,
     conversation,
     status,
+    turnAnchor,
     isBusy,
     awaitingUser,
     loading,

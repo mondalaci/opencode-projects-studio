@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import MessageItem from "./MessageItem.vue"
+import Caret from "./Caret.vue"
 import Spinner from "./Spinner.vue"
 import ThreadPrompts from "./ThreadPrompts.vue"
 import { useChat } from "@/stores/chat"
 import { findOpen } from "@/stores/find"
 
-const { messages, conversation, loading, currentSessionID, scrollToBottomRequest, contentBelow, pendingForms, pendingPermissions, isBusy, awaitingUser } = useChat()
+const { messages, conversation, loading, currentSessionID, scrollToBottomRequest, contentBelow, pendingForms, pendingPermissions, isBusy, awaitingUser, turnAnchor } = useChat()
 
 const viewport = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
@@ -31,16 +32,68 @@ const lastAssistantID = computed(() => {
 })
 
 /**
- * The caret's owner: the caret is the turn's heartbeat, so it blinks for as long
- * as the turn runs — while prose streams and while a tool call outlives the step
- * that started it. A turn blocked on a question or a permission is waiting for
- * the reader, not the model, so the caret rests there: a blinking cursor above
- * the card would promise something nothing is keeping.
+ * Which side of the conversation the reader is looking at last, past the
+ * bookkeeping messages woven between them — a skill, a shell command, a
+ * compaction — which are drawn as notes and belong to neither.
+ *
+ * A prompt is in the conversation from the moment it is sent, while the reply it
+ * asks for arrives with the first part of the model's own step. In the moment
+ * between, the newest side is the prompt and the last assistant message is still
+ * the *previous* turn's answer.
  */
-const caretID = computed(() => {
-  if (!isBusy.value || awaitingUser.value) return null
-  return lastAssistantID.value
+const newest = computed<"user" | "assistant" | null>(() => {
+  for (let i = conversation.value.length - 1; i >= 0; i--) {
+    const type = conversation.value[i].type
+    if (type === "assistant" || type === "user") return type
+  }
+  return null
 })
+
+/**
+ * The reply the running turn is writing, if it has started one — the caret's only
+ * home.
+ *
+ * The caret is the turn's heartbeat, so it blinks for as long as the turn runs —
+ * while prose streams and while a tool call outlives the step that started it —
+ * but only on a reply of *this* turn. The two are told apart by the mark the
+ * store leaves where the turn began: a reply after the mark is this turn's,
+ * while one at or before it belongs to a turn that has already ended, and a caret
+ * left there blinks on the previous answer. That is what a rule reading only "the
+ * newest assistant message" did — for a prompt just sent, whose own reply does
+ * not exist yet, and for a slash command, which starts a turn without adding a
+ * message at all.
+ *
+ * A turn this view did not start — a session opened while it is already running —
+ * carries no mark, and falls back to the unfinished message: a reply that was
+ * never completed is one still being written.
+ *
+ * A turn parked on a question or a permission is waiting for the reader, not the
+ * model, so no reply of its own carries the caret yet: a cursor above the card
+ * would promise something nothing is keeping.
+ */
+const turnReply = computed(() => {
+  if (!isBusy.value || awaitingUser.value) return null
+  const list = conversation.value
+  let at = -1
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].type === "assistant") {
+      at = i
+      break
+    }
+  }
+  const reply = at < 0 ? null : list[at]
+  if (!reply || reply.type !== "assistant") return null
+  const anchor = list.findIndex((message) => message.id === turnAnchor.value)
+  if (anchor >= 0) return at > anchor ? reply : null
+  return reply.time?.completed ? null : reply
+})
+
+/**
+ * A running turn that has not begun to answer: the caret waits under the prompt,
+ * in the column the reply's text will fill, instead of blinking on the reply that
+ * came before it.
+ */
+const waiting = computed(() => isBusy.value && !awaitingUser.value && newest.value === "user")
 
 function onScroll() {
   const el = viewport.value
@@ -171,9 +224,13 @@ onMounted(() => {
             :key="message.id"
             :message="message"
             :streaming="message.id === lastAssistantID && message.type === 'assistant' && !message.time?.completed"
-            :caret="message.id === caretID"
+            :caret="message.id === turnReply?.id"
             :latest="message.id === lastAssistantID"
           />
+
+          <!-- The caret of a turn that has not begun to answer: it hangs below the
+               prompt, where the reply it is waiting for will be drawn. -->
+          <div v-if="waiting" class="caret-row"><Caret /></div>
 
           <!-- Turn-level widgets the app weaves into the conversation: questions
                and permission cards sit after the last message, above the
@@ -231,6 +288,17 @@ onMounted(() => {
   place-items: center;
   height: 100%;
   color: var(--text-muted);
+}
+/* The caret of a turn whose reply has not started. It stands in the column the
+   reply's text will fill — past the avatar gutter every reply leaves — so it
+   blinks where the answer is about to appear, under the prompt that asked for
+   it. The row is the height a message's own row is, so the prompt and the cursor
+   keep the spacing they would have had. */
+.caret-row {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  width: 100%;
+  padding: 10px 0 10px calc(28px + 12px);
 }
 .spacer {
   height: 12px;

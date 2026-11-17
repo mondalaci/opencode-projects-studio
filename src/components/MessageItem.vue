@@ -9,6 +9,7 @@ import { isStop } from "@/utils/stop"
 import { heldModifier } from "@/stores/shortcuts"
 import { useServer } from "@/stores/server"
 import { useApp } from "@/stores/app"
+import Caret from "./Caret.vue"
 import Markdown from "./Markdown.vue"
 import PartFile from "./PartFile.vue"
 import PartMessageCompose from "./PartMessageCompose.vue"
@@ -241,7 +242,7 @@ function isCompose(block: AssistantToolBlock): boolean {
              off `time.completed` left the whole tool phase with no sign of
              progress at all. The parent withholds it while the turn waits on the
              reader. -->
-        <div v-if="caret" class="caret"></div>
+        <Caret v-if="caret" />
 
         <div v-if="errorMessage" class="error" :class="{ stopped: stoppedStep }">{{ errorMessage }}</div>
         <div v-if="retryNote" class="retry">{{ retryNote }}</div>
@@ -425,19 +426,6 @@ function isCompose(block: AssistantToolBlock): boolean {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-.caret {
-  display: inline-block;
-  width: 8px;
-  height: 15px;
-  background: var(--text);
-  vertical-align: text-bottom;
-  animation: opencode-blink 1s step-start infinite;
-}
-@keyframes opencode-blink {
-  50% {
-    opacity: 0;
-  }
 }
 .error {
   margin-top: 8px;
