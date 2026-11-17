@@ -31,21 +31,15 @@ const lastAssistantID = computed(() => {
 })
 
 /**
- * The id of the trailing assistant message whose *text* is streaming, which is
- * the only place the caret belongs.
- *
- * The caret is the cursor of arriving prose, so a turn that has moved on to a
- * tool call is no longer streaming text — the tool row carries its own spinner —
- * and a step blocked on a question or a permission is waiting for the reader,
- * not the model. Drawing it then parked a blinking cursor with nothing to
- * follow, directly above the question card.
+ * The caret's owner: the caret is the turn's heartbeat, so it blinks for as long
+ * as the turn runs — while prose streams and while a tool call outlives the step
+ * that started it. A turn blocked on a question or a permission is waiting for
+ * the reader, not the model, so the caret rests there: a blinking cursor above
+ * the card would promise something nothing is keeping.
  */
-const streamingTextID = computed(() => {
+const caretID = computed(() => {
   if (!isBusy.value || awaitingUser.value) return null
-  const last = messages.value[messages.value.length - 1]
-  if (!last || last.type !== "assistant") return null
-  const parts = last.content
-  return parts[parts.length - 1]?.type === "text" ? last.id : null
+  return lastAssistantID.value
 })
 
 function onScroll() {
@@ -177,7 +171,7 @@ onMounted(() => {
             :key="message.id"
             :message="message"
             :streaming="message.id === lastAssistantID && message.type === 'assistant' && !message.time?.completed"
-            :caret="message.id === streamingTextID"
+            :caret="message.id === caretID"
             :latest="message.id === lastAssistantID"
           />
 
