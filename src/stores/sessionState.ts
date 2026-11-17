@@ -271,17 +271,46 @@ export function useSessionState() {
   }
 
   /**
-   * Repair pass: re-read every project's pending lists, so a block that arrived
-   * while the stream was down is picked up and one answered meanwhile is cleared.
-   * Runs on (re)connect, when the whole picture is worth rebuilding.
+   * Repair pass for (re)connect: re-read the pending lists of the project on
+   * screen, of every directory already known to hold a block, and of every
+   * location the server already has loaded, so a request that arrived while the
+   * stream was down is picked up and one answered meanwhile is cleared.
+   *
+   * Deliberately *not* every known project. A pending-list request is scoped to
+   * a `location`, and materializing a location starts that project's whole MCP
+   * fleet — so asking all ~40 projects at connect booted ~40 MCP fleets and tens
+   * of GiB of server processes at once, which is what froze the machine.
+   *
+   * The loaded set is the key: a permission or question exists only while a turn
+   * is live, and a live turn pins its location, so a project that can possibly
+   * show a block is *already* loaded — and repairing those boots nothing new.
+   * That gives every project its badge without paying for a fleet to discover it.
+   * (`/api/debug/location` is the server's debug endpoint, so a failure is
+   * tolerated: the two known sets still cover the project on screen and anything
+   * already flagged.)
    */
-  async function sweepAll() {
-    const directories = [
-      ...projects.entries.value.map((entry) => entry.directory),
-      server.directory.value,
-      ...blockedDirectories(),
-    ]
+  async function sweepOnConnect(client: ServerClient) {
+    let loaded: string[] = []
+    try {
+      loaded = await client.loadedLocations()
+    } catch {
+      /* debug endpoint unavailable: fall back to the sets we already know */
+    }
+    const directories = [server.directory.value, ...loaded, ...blockedDirectories()]
     await reconcile(directories)
+  }
+
+  /**
+   * Re-read one project's pending lists, for when it becomes the one on screen.
+   *
+   * Switching to a project already materializes its location (the scoped
+   * `server.load` does), so this adds one permission/form query to a fleet that
+   * is booting anyway — it is what keeps the opened project's blocked dot
+   * correct without sweeping every project at connect.
+   */
+  async function reconcileProject(directory: string | null | undefined) {
+    if (!directory) return
+    await reconcile([directory])
   }
 
   /**
@@ -309,7 +338,7 @@ export function useSessionState() {
             signal,
             onOpen: () => {
               globalLive.value = true
-              void sweepAll()
+              void sweepOnConnect(client)
             },
           })
         } catch {
@@ -341,7 +370,7 @@ export function useSessionState() {
     activeClient = client
     watchWindow()
     void follow(client)
-    void sweepAll()
+    void sweepOnConnect(client)
     sweepTimer = setInterval(() => void sweep(), SWEEP_MS)
   }
 
@@ -422,6 +451,7 @@ export function useSessionState() {
     stateFor,
     reasonFor,
     markSeen,
+    reconcileProject,
     start,
     stop,
     reset,

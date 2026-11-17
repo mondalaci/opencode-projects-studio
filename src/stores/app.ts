@@ -171,6 +171,9 @@ export function useApp() {
     server.setDirectory(directory)
     await server.load(client, connection.connected.value?.origin ?? "", directory)
     await loadScoped(client)
+    // The opened project's block is discovered here rather than by sweeping
+    // every project at connect, which would boot every project's MCP fleet.
+    await sessionState.reconcileProject(directory)
   }
 
   async function openProject(directory: string) {

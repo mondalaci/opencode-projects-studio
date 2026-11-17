@@ -168,6 +168,23 @@ export class ServerClient {
     return this.request<LocationInfo>("/api/location", opts)
   }
 
+  /**
+   * The directories the server has currently materialized ("loaded locations").
+   *
+   * This is exactly the set that can hold a pending permission or question: a
+   * block exists only while a turn is live, and a live turn pins its location —
+   * so it is the complete set to repair the blocked flags from. Listing it boots
+   * nothing (it reads the loaded set; it does not touch a directory), which is
+   * what makes a repair pass over it free. The endpoint is the server's debug
+   * one, and is unsupported API surface, so callers must tolerate a failure.
+   */
+  async loadedLocations(opts: RequestOptions = {}): Promise<string[]> {
+    const res = await this.request<Array<{ directory?: string }>>("/api/debug/location", opts)
+    return (res ?? [])
+      .map((entry) => entry.directory)
+      .filter((directory): directory is string => Boolean(directory))
+  }
+
   async config(opts: RequestOptions = {}): Promise<ServerConfig> {
     // `/api/config` returns an array of config documents; flatten to the first
     // document's info, which is the merged user config.
