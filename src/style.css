@@ -426,74 +426,106 @@ a {
   animation: opencode-fade 0.12s ease;
 }
 /*
- * highlight.js on the editor surfaces (diff and file views). Unlike the message
- * code blocks these sit on the app background, so the palette follows the theme.
+ * highlight.js on surfaces that follow the theme: the diff and file views, and
+ * a highlighted tool summary, which sits on the tool row's own background
+ * rather than the always-dark message code block. The light values are darker
+ * so they clear 4.5:1 on the light row background, including its hover tone;
+ * the dark theme reuses the message code block palette.
  */
-.editor-code .hljs-comment,
-.editor-code .hljs-quote,
-.editor-code .hljs-meta {
-  color: #6a737d;
+:is(.editor-code, .hljs-themed) .hljs-comment,
+:is(.editor-code, .hljs-themed) .hljs-quote,
+:is(.editor-code, .hljs-themed) .hljs-meta {
+  color: #57606a;
 }
-.editor-code .hljs-keyword,
-.editor-code .hljs-selector-tag,
-.editor-code .hljs-literal,
-.editor-code .hljs-type {
-  color: #d73a49;
+:is(.editor-code, .hljs-themed) .hljs-keyword,
+:is(.editor-code, .hljs-themed) .hljs-selector-tag,
+:is(.editor-code, .hljs-themed) .hljs-literal,
+:is(.editor-code, .hljs-themed) .hljs-type {
+  color: #b31d28;
 }
-.editor-code .hljs-string,
-.editor-code .hljs-attr,
-.editor-code .hljs-template-tag {
+:is(.editor-code, .hljs-themed) .hljs-string,
+:is(.editor-code, .hljs-themed) .hljs-attr,
+:is(.editor-code, .hljs-themed) .hljs-template-tag {
   color: #032f62;
 }
-.editor-code .hljs-number,
-.editor-code .hljs-symbol,
-.editor-code .hljs-built_in {
+:is(.editor-code, .hljs-themed) .hljs-number,
+:is(.editor-code, .hljs-themed) .hljs-symbol {
   color: #005cc5;
 }
-.editor-code .hljs-title,
-.editor-code .hljs-title.class_,
-.editor-code .hljs-title.function_ {
+/* Flags and URLs are tokens the bash grammar leaves plain; the summary
+   highlighter adds them so a command reads as colourfully as a code block. */
+:is(.editor-code, .hljs-themed) .hljs-flag {
+  color: #a21caf;
+}
+:is(.editor-code, .hljs-themed) .hljs-link {
+  color: #0e7490;
+}
+/* Commands are the most frequent token in a shell summary, so they get their
+   own warm hue instead of the blue that numbers and symbols share. */
+:is(.editor-code, .hljs-themed) .hljs-built_in {
+  color: #953800;
+}
+:is(.editor-code, .hljs-themed) .hljs-title,
+:is(.editor-code, .hljs-themed) .hljs-title.class_,
+:is(.editor-code, .hljs-themed) .hljs-title.function_ {
   color: #6f42c1;
 }
-.editor-code .hljs-variable,
-.editor-code .hljs-name {
-  color: #e36209;
+:is(.editor-code, .hljs-themed) .hljs-variable,
+:is(.editor-code, .hljs-themed) .hljs-name {
+  color: #a33f00;
 }
-.editor-code .hljs-tag {
-  color: #22863a;
+:is(.editor-code, .hljs-themed) .hljs-tag {
+  color: #17632a;
 }
 
-html[data-theme="dark"] .editor-code .hljs-comment,
-html[data-theme="dark"] .editor-code .hljs-quote,
-html[data-theme="dark"] .editor-code .hljs-meta {
-  color: #8b949e;
+/* Unhighlighted text in a highlighted summary; the row's own faint tone would
+   leave the command itself too pale to read. */
+.hljs-themed {
+  color: #616166;
 }
-html[data-theme="dark"] .editor-code .hljs-keyword,
-html[data-theme="dark"] .editor-code .hljs-selector-tag,
-html[data-theme="dark"] .editor-code .hljs-literal,
-html[data-theme="dark"] .editor-code .hljs-type {
+html[data-theme="dark"] .hljs-themed {
+  color: var(--text-muted);
+}
+
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-comment,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-quote,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-meta {
+  color: #939ca5;
+}
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-keyword,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-selector-tag,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-literal,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-type {
   color: #ff7b72;
 }
-html[data-theme="dark"] .editor-code .hljs-string,
-html[data-theme="dark"] .editor-code .hljs-attr,
-html[data-theme="dark"] .editor-code .hljs-template-tag {
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-string,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-attr,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-template-tag {
   color: #a5d6ff;
 }
-html[data-theme="dark"] .editor-code .hljs-number,
-html[data-theme="dark"] .editor-code .hljs-symbol,
-html[data-theme="dark"] .editor-code .hljs-built_in {
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-number,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-symbol {
   color: #79c0ff;
 }
-html[data-theme="dark"] .editor-code .hljs-title,
-html[data-theme="dark"] .editor-code .hljs-title.class_,
-html[data-theme="dark"] .editor-code .hljs-title.function_ {
-  color: #d2a8ff;
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-flag {
+  color: #e879f9;
 }
-html[data-theme="dark"] .editor-code .hljs-variable,
-html[data-theme="dark"] .editor-code .hljs-name {
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-link {
+  color: #67e8f9;
+}
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-built_in {
   color: #ffa657;
 }
-html[data-theme="dark"] .editor-code .hljs-tag {
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-title,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-title.class_,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-title.function_ {
+  color: #d2a8ff;
+}
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-variable,
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-name {
+  color: #ffa657;
+}
+html[data-theme="dark"] :is(.editor-code, .hljs-themed) .hljs-tag {
   color: #7ee787;
 }
 

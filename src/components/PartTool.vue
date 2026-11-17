@@ -6,7 +6,7 @@ import { prettyJson, toolSummary } from "@/utils/format"
 import { toolOutputText } from "@/utils/compose"
 import { isStop } from "@/utils/stop"
 import { isDataUrl } from "@/utils/file"
-import { highlightLines } from "@/utils/highlight"
+import { highlightLines, highlightShellSummary } from "@/utils/highlight"
 import { openImage } from "@/stores/lightbox"
 import Spinner from "./Spinner.vue"
 
@@ -59,6 +59,21 @@ function highlightJson(code: string): string | null {
   return lines ? lines.join("\n") : null
 }
 
+/** Tools whose summary is a shell command, and so reads better highlighted. */
+const SHELL_TOOLS = new Set(["shell", "bash"])
+
+/**
+ * The summary as highlighted HTML, or null to render it as plain text.
+ *
+ * Only a shell command is worth colouring: a file path or a search pattern has
+ * no tokens to highlight, and the bash grammar would merely add noise to it.
+ */
+const summaryHtml = computed(() => {
+  const text = summary.value
+  if (!text || !SHELL_TOOLS.has(props.block.name)) return null
+  return highlightShellSummary(text)
+})
+
 /** Whether a tool block's text parses as JSON. */
 function isJson(code: string): boolean {
   const trimmed = code.trim()
@@ -85,10 +100,14 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
         <ChevronRight :size="14" class="chev" :class="{ open }" />
         <Terminal :size="14" class="tool-icon" />
         <span class="tool-name">{{ block.name }}</span>
-        <!-- The summary continues the name's line. Its leading space is an
-             interpolation because the compiler strips whitespace that sits
-             between two elements. -->
-        <span v-if="summary" class="tool-title">{{ " " }}{{ summary }}</span>
+        <!-- A rule, not a space: the name and the summary are different things,
+             and a monospace run reads them as one sentence without it. A shell
+             command is highlighted; every other summary stays as it is. -->
+        <span v-if="summary" class="name-sep" aria-hidden="true"></span>
+        <span v-if="summary" class="tool-title">
+          <template v-if="summaryHtml"><span class="hljs-themed" v-html="summaryHtml" /></template>
+          <template v-else>{{ summary }}</template>
+        </span>
       </span>
       <span class="status">
         <Spinner v-if="running" :size="12" />
@@ -201,6 +220,16 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 }
 .tool-name {
   color: var(--text);
+}
+/* Separates the tool's name from its summary. Inline, so a wrapped summary still
+   continues at the row's left edge rather than past the icons. */
+.name-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  margin: 0 8px;
+  vertical-align: middle;
+  background: var(--border-strong);
 }
 .status {
   flex: none;
