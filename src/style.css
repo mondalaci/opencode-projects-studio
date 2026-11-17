@@ -137,6 +137,37 @@ html.window-resizing * {
   color: var(--text);
 }
 
+/*
+ * The pill a floating conversation control wears: the step buttons hung on the
+ * thread's scrollbar, and the way back to the end of the conversation, which
+ * hangs at the bottom of the window. Global because the two are drawn by
+ * different components — the second one outside the thread — and they stand in
+ * one column, so they have to be the same pill.
+ */
+.float-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: var(--shadow);
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+.float-pill:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+/* Nothing that way: the control is still on screen, saying so. */
+.float-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 html,
 body,
 #app {

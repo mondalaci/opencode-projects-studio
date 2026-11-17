@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { X, CircleAlert, Check, Hash, Moon, Sun } from "lucide-vue-next"
+import { X, ArrowDownToLine, CircleAlert, Check, Hash, Moon, Sun } from "lucide-vue-next"
 import type { AssistantMessage } from "@/api/types"
 import Sidebar from "./Sidebar.vue"
 import SourceControl from "./SourceControl.vue"
@@ -18,7 +18,7 @@ import { startFilter, stopFilter } from "@/stores/filter"
 import { useGit } from "@/stores/git"
 import { useTray } from "@/stores/tray"
 import { requestComposerFocus } from "@/stores/draft"
-import { requestOpen, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
+import { requestOpen, requestPromptStep, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
 import { applyScmWidth, scmWidth, setScmWidth } from "@/stores/layout"
@@ -30,7 +30,7 @@ const git = useGit()
 const fileViewer = useFileViewer()
 const tray = useTray()
 const { current, currentID } = app.sessions
-const { error, messages, isBusy, awaitingUser } = app.chat
+const { error, messages, isBusy, awaitingUser, contentBelow, requestScrollToBottom } = app.chat
 const { models, selectedModelInfo } = app.server
 const { newChat, cycleProject } = app
 
@@ -314,6 +314,19 @@ function onKeyDown(event: KeyboardEvent) {
       event.preventDefault()
       if (isBusy.value || awaitingUser.value) void app.abort()
       break
+    case shortcutKeys.promptUp:
+      // The composer's command menu walks its rows with the arrows, and claims
+      // them with `preventDefault`; a closer handler wins, as it does for the
+      // page-stepping pair above.
+      if (event.defaultPrevented) break
+      event.preventDefault()
+      requestPromptStep("up")
+      break
+    case shortcutKeys.promptDown:
+      if (event.defaultPrevented) break
+      event.preventDefault()
+      requestPromptStep("down")
+      break
     case shortcutKeys.newChat:
       event.preventDefault()
       void newChat()
@@ -427,6 +440,22 @@ onBeforeUnmount(() => {
             <button @click="dismissError"><X :size="14" /></button>
           </div>
           <Composer v-else />
+
+          <!-- The way back to the end of the conversation. It hangs at the bottom
+               of the window rather than in the thread's own corner: the thread
+               ends above the composer, and this is chrome for the whole pane. It
+               takes the same right inset as the step buttons the thread draws,
+               so the three stand in one column. -->
+          <button
+            v-if="contentBelow"
+            type="button"
+            class="to-bottom float-pill"
+            title="Scroll to the end of the conversation"
+            aria-label="Scroll to the end of the conversation"
+            @click="requestScrollToBottom()"
+          >
+            <ArrowDownToLine :size="14" />
+          </button>
         </div>
       </template>
     </main>
@@ -597,6 +626,23 @@ onBeforeUnmount(() => {
 .bottom {
   position: relative;
   flex: none;
+}
+/* The way back to the end of the conversation: the same pill the thread's step
+   buttons wear, at the bottom of the window, in the composer's row, so the three
+   controls stand in one column down the pane's right edge. */
+.to-bottom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+}
+/* Below this the composer keeps only a 16px gutter — the same breakpoint its own
+   card narrows at — and the corner belongs to its send button, so there is no
+   lane left for this one to float in. */
+@media (max-width: 900px) {
+  .to-bottom {
+    display: none;
+  }
 }
 /* Fade the conversation out as it approaches the composer. */
 .bottom::before {

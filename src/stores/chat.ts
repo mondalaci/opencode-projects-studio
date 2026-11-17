@@ -66,6 +66,17 @@ function requestScrollToBottom() {
   scrollToBottomRequest.value++
 }
 
+/**
+ * Whether the conversation has anything below the fold.
+ *
+ * Only the thread knows this — it is its own scroll geometry — but the button
+ * that answers it is not in the thread: the way back to the end of the
+ * conversation hangs at the bottom of the window, in the composer's row, beside
+ * the rest of the chrome. The fact travels the channel the scroll request uses,
+ * in the other direction.
+ */
+const contentBelow = ref(false)
+
 /** Where a streamed text/reasoning ordinal landed in an assistant message's content. */
 const streamIndex = new Map<string, { text: Map<number, number>; reasoning: Map<number, number> }>()
 
@@ -896,6 +907,7 @@ export function useChat() {
     currentSessionID,
     scrollToBottomRequest,
     requestScrollToBottom,
+    contentBelow,
     open,
     reconcile,
     send,

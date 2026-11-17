@@ -416,6 +416,7 @@ each badge names its own modifier, so a letter never appears next to the wrong o
 | `Alt`+`M` / `Alt`+`A` / `Alt`+`E` | Model / agent / effort |
 | `Alt`+`C` | Focus the composer |
 | `Alt`+`X` | Stop the current turn |
+| `Alt`+`↑` / `Alt`+`↓` | Jump to your previous / next message in the conversation |
 | `Esc` | Close the open diff or search page, or clear a sidebar filter (ending a Ctrl+P preview) |
 
 The two filters narrow their list as you type (subsequences work: `kwchat` finds

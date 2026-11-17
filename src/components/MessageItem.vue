@@ -126,9 +126,20 @@ const modelLabel = computed(() => {
   return { text: effort ? `${name}: ${effort}` : name, reference: ref_.id }
 })
 
+/**
+ * What holding `Alt` reveals over a message.
+ *
+ * The two sides are not symmetric: a model, a token count and a cost belong to
+ * the step that answered a prompt, so an assistant message is the only one that
+ * records them, while a prompt has the date it was sent. Each block says what
+ * its own message carries rather than repeating the reply's figures.
+ */
 const meta = computed(() => {
-  if (props.message.type !== "assistant") return null
   const message = props.message
+  if (message.type === "user") {
+    return { created: message.time?.created, model: "", reference: "", tokens: 0, cost: 0 }
+  }
+  if (message.type !== "assistant") return null
   const tokens = message.tokens
   const total = tokens ? tokens.input + tokens.output + tokens.reasoning : 0
   return {
@@ -139,6 +150,13 @@ const meta = computed(() => {
     created: message.time?.created,
   }
 })
+
+/**
+ * Whether holding `Alt` would add anything to a message's block: the model, the
+ * tokens and the cost, which only a reply records. A prompt's block is the date
+ * alone, and an empty one should not draw the card the figures hang in.
+ */
+const metaRest = computed(() => Boolean(meta.value?.model || meta.value?.tokens || meta.value?.cost))
 
 function isCompose(block: AssistantToolBlock): boolean {
   return composedMessage(block) !== null
@@ -163,7 +181,7 @@ function isCompose(block: AssistantToolBlock): boolean {
       </div>
     </template>
 
-    <div v-else class="message" :class="isUser ? 'user' : 'assistant'">
+    <div v-else class="message" :class="isUser ? 'user' : 'assistant'" :data-message-id="message.id">
     <div v-if="!isUser" class="avatar" aria-hidden="true">
       <!-- A robot, drawn here rather than imported: a rounded head with a stub
            antenna and side ears, and two eyes knocked out of the fill so they
@@ -181,51 +199,58 @@ function isCompose(block: AssistantToolBlock): boolean {
         </g>
       </svg>
     </div>
-    <div class="bubble" :class="isUser ? 'user-bubble' : 'assistant-bubble'">
-      <template v-if="isUser">
-        <p v-if="message.type === 'user' && message.text" class="user-text">{{ message.text }}</p>
-        <PartFile
-          v-for="(file, index) in (message.type === 'user' ? message.files : undefined) ?? []"
-          :key="index"
-          :data="file.data"
-          :mime="file.mime"
-          :filename="file.name"
-        />
-      </template>
+    <div class="body">
+      <!-- The date is always here, hung beside the avatar; what the message cost
+           arrives with the modifier, so nothing is spent on the figures until
+           they are asked for. -->
+      <div v-if="meta" class="meta" :title="meta.reference || undefined">
+        <div class="meta-inner">
+          <div v-if="meta.created" class="meta-row meta-datetime">{{ formatDateTime(meta.created) }}</div>
+          <div v-if="metaRest && !streaming && heldModifier === 'alt'" class="meta-rest">
+            <div v-if="meta.model" class="meta-model">{{ meta.model }}</div>
+            <div v-if="meta.tokens" class="meta-row">{{ formatTokens(meta.tokens) }} tokens</div>
+            <div v-if="meta.cost" class="meta-row">{{ formatCost(meta.cost) }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="bubble" :class="isUser ? 'user-bubble' : 'assistant-bubble'">
+        <template v-if="isUser">
+          <p v-if="message.type === 'user' && message.text" class="user-text">{{ message.text }}</p>
+          <PartFile
+            v-for="(file, index) in (message.type === 'user' ? message.files : undefined) ?? []"
+            :key="index"
+            :data="file.data"
+            :mime="file.mime"
+            :filename="file.name"
+          />
+        </template>
 
-      <template v-else-if="isAssistant">
-        <template v-for="(part, index) in content" :key="index">
-          <Markdown v-if="part.type === 'text'" :text="part.text" :streaming="streaming" />
-          <PartReasoning v-else-if="part.type === 'reasoning'" :block="part as AssistantReasoningBlock" />
-          <template v-else-if="part.type === 'tool'">
-            <PartMessageCompose v-if="isCompose(part)" :block="part" />
-            <PartTool v-else :block="part" />
+        <template v-else-if="isAssistant">
+          <template v-for="(part, index) in content" :key="index">
+            <Markdown v-if="part.type === 'text'" :text="part.text" :streaming="streaming" />
+            <PartReasoning v-else-if="part.type === 'reasoning'" :block="part as AssistantReasoningBlock" />
+            <template v-else-if="part.type === 'tool'">
+              <PartMessageCompose v-if="isCompose(part)" :block="part" />
+              <PartTool v-else :block="part" />
+            </template>
           </template>
         </template>
-      </template>
 
-      <!-- The caret is the cursor of arriving prose. The parent shows it only
-           while this message's trailing part is streaming text: a running tool
-           spins on its own row, and a turn blocked on a question is waiting for
-           the reader, not the model. -->
-      <div v-if="caret" class="caret"></div>
+        <!-- The caret is the cursor of arriving prose. The parent shows it only
+             while this message's trailing part is streaming text: a running tool
+             spins on its own row, and a turn blocked on a question is waiting for
+             the reader, not the model. -->
+        <div v-if="caret" class="caret"></div>
 
-      <div v-if="errorMessage" class="error" :class="{ stopped: stoppedStep }">{{ errorMessage }}</div>
-      <div v-if="retryNote" class="retry">{{ retryNote }}</div>
-      <div v-if="truncated" class="truncated">
-        <span>This reply stopped at the model's output limit.</span>
-        <button type="button" class="truncated-continue" @click="continueReply">Continue</button>
+        <div v-if="errorMessage" class="error" :class="{ stopped: stoppedStep }">{{ errorMessage }}</div>
+        <div v-if="retryNote" class="retry">{{ retryNote }}</div>
+        <div v-if="truncated" class="truncated">
+          <span>This reply stopped at the model's output limit.</span>
+          <button type="button" class="truncated-continue" @click="continueReply">Continue</button>
+        </div>
       </div>
     </div>
     <div v-if="isUser" class="avatar" aria-hidden="true"><User :size="15" /></div>
-    <div v-if="meta && !streaming && heldModifier === 'alt'" class="meta" :title="meta.reference || meta.model">
-      <div class="meta-inner">
-        <div v-if="meta.created" class="meta-row meta-datetime">{{ formatDateTime(meta.created) }}</div>
-        <div class="meta-model">{{ meta.model }}</div>
-        <div v-if="meta.tokens" class="meta-row">{{ formatTokens(meta.tokens) }} tokens</div>
-        <div v-if="meta.cost" class="meta-row">{{ formatCost(meta.cost) }}</div>
-      </div>
-    </div>
     </div>
   </template>
 </template>
@@ -311,7 +336,10 @@ function isCompose(block: AssistantToolBlock): boolean {
   position: relative;
   display: flex;
   gap: 12px;
-  padding: 10px 0;
+  /* The padding the row is drawn with, named because the metadata block hangs
+     outside it and has to add it back to land on the avatar's line. */
+  --message-pad: 10px;
+  padding: var(--message-pad) 0;
   max-width: var(--content-width);
   margin: 0 auto;
   width: 100%;
@@ -354,16 +382,32 @@ function isCompose(block: AssistantToolBlock): boolean {
 .robot-eyes {
   fill: var(--avatar-tile);
 }
-.bubble {
+/* The message's own column: the metadata line, then the bubble. In a window wide
+   enough to hang the metadata in the gutter it is out of flow there, so the
+   column is just the bubble and its width is the width it always had. */
+.body {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  max-width: 100%;
 }
-.assistant-bubble {
+.message.assistant .body {
   flex: 1;
   /* Stop one gutter short of the column edge, where the user's bubble stops, so
      the assistant's content and the user's share one width and both avatars
      protrude past it. */
   margin-right: var(--avatar-gutter);
+}
+.message.user .body {
+  flex: 1;
+  /* Hug the avatar: the bubble is as wide as its text allows, and the metadata
+     line above it follows the same edge. `80%` is the cap the bubble itself
+     carried, moved here so the line is measured by the same width. */
+  align-items: flex-end;
+  max-width: 80%;
+}
+.bubble {
+  min-width: 0;
+  max-width: 100%;
 }
 /* A bordered block that opens a message is level with the avatar beside it: both
    are boxes, so their top edges meet. Text is left alone — its line box already
@@ -375,7 +419,6 @@ function isCompose(block: AssistantToolBlock): boolean {
   background: var(--bubble-user);
   border-radius: var(--radius-lg);
   padding: 9px 14px;
-  max-width: 80%;
 }
 .user-text {
   margin: 0;
@@ -445,18 +488,37 @@ function isCompose(block: AssistantToolBlock): boolean {
 .truncated-continue:hover {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
+/* The metadata hangs beside the avatar — in the gutter outside the content
+   column, on the side that avatar hangs on — so it reads as the message's own
+   rather than as something floating in the column. The date is always there; the
+   model, the tokens and the cost are the part the modifier reveals. The lines are
+   flush to the avatar, which is why the assistant's, hung to its left, are
+   right-aligned. */
 .meta {
   position: absolute;
   top: 0;
-  left: calc(100% + 14px);
   height: 100%;
   width: max-content;
-  max-width: min(360px, calc(50vw - var(--content-width) / 2 - 40px));
+  /* The gutter the row leaves outside the content column — half of the thread's
+     own width less the column — less the gap that keeps the block off the row,
+     and never more than a readable measure. */
+  max-width: min(360px, calc((100cqw - var(--content-width)) / 2 - 14px));
   pointer-events: none;
+}
+.message.assistant .meta {
+  right: calc(100% + 14px);
+  text-align: right;
+}
+.message.user .meta {
+  left: calc(100% + 14px);
+  text-align: left;
 }
 .meta-inner {
   position: sticky;
   top: -10px;
+  /* Level with the avatar: the row's own padding, which absolute positioning
+     measures from, plus the avatar's offset below it. */
+  margin-top: calc(var(--message-pad) + var(--avatar-top));
   font-size: 11px;
   line-height: 1.5;
   color: var(--text-faint);
@@ -468,6 +530,10 @@ function isCompose(block: AssistantToolBlock): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Left-aligned within the block, unlike the rows under it: a name too long
+     for the gutter then loses its tail behind the ellipsis rather than its
+     head, and reads as the same name the picker showed. */
+  text-align: left;
 }
 .meta-row {
   white-space: nowrap;
@@ -475,22 +541,59 @@ function isCompose(block: AssistantToolBlock): boolean {
 .meta-datetime {
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 1360px) {
+/* A thread too narrow to hang the metadata in: the gutter is gone, and there is
+   nowhere beside the text for something that is always on screen. The date takes
+   a line of the message's own column instead — the byline over the bubble it
+   belongs to, level with the avatar — and what the modifier adds keeps out of
+   the flow, hanging under the date as a card, so revealing it never pushes the
+   conversation around.
+ *
+ * Measured on the thread rather than the window: the sidebar and the
+ * source-control panel are what really decide whether a gutter is there. The
+ * breakpoint is the content column (46rem) plus the 120px of gutter each side
+ * that the date needs to fit beside the avatar, less a few pixels of slack —
+ * a condition cannot read the variable, so it carries the sum in its own words.
+ */
+@container thread (max-width: 975px) {
   .meta {
-    top: 6px;
-    left: auto;
-    right: 4px;
+    position: static;
     height: auto;
     width: auto;
     max-width: none;
+    padding-bottom: 2px;
   }
   .meta-inner {
-    position: static;
+    position: relative;
+    margin-top: 0;
+  }
+  /* The byline follows the text it labels: left of an assistant's, right of a
+     user's. */
+  .message.assistant .meta {
+    text-align: left;
+  }
+  .message.user .meta {
+    text-align: right;
+  }
+  .meta-model {
+    text-align: inherit;
+  }
+  .meta-rest {
+    position: absolute;
+    top: 100%;
+    left: 0;
     padding: 4px 8px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: var(--shadow);
+    text-align: left;
+    /* One line each rather than a wrap: the card is as wide as its longest row,
+       which is what keeps it from running off the edge it hangs from. */
+    width: max-content;
+  }
+  .message.user .meta-rest {
+    left: auto;
+    right: 0;
   }
 }
 </style>
