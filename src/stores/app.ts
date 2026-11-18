@@ -111,7 +111,6 @@ export function useApp() {
     const client = connection.client.value
     if (!client) return
     sessions.currentID.value = sessionID
-    sessionState.markSeen(sessionID)
     writeSessionParam(sessionID, readSessionParam() === sessionID)
     const info = await client.getSession(sessionID, { directory: server.directory.value }).catch(() => null)
     if (info) {
@@ -119,6 +118,9 @@ export function useApp() {
       const directory = sessionDirectory(info)
       if (directory) projects.setLatest(directory, info)
     }
+    // After the info is in hand: publishing the view needs the conversation's
+    // idle stamp, which only the fetched record carries.
+    sessionState.markSeen(sessionID)
     await chat.open(client, sessionID, server.directory.value)
   }
 

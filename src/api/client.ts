@@ -489,6 +489,18 @@ export class ServerClient {
     return this.request<unknown>(`/api/session/${sessionID}/interrupt`, { ...opts, method: "POST" })
   }
 
+  /**
+   * Mark the idle transition a viewer has observed as seen.
+   *
+   * The body carries the `idle` stamp the viewer saw; the server keeps it as
+   * `time.viewed`, and `viewed >= idle` is what says "this finish is old news".
+   * That is the one piece of the dots that travels between clients — the studio
+   * and the panel both post it and both read it.
+   */
+  viewSession(sessionID: string, idle: number, opts: RequestOptions = {}) {
+    return this.request<unknown>(`/api/session/${sessionID}/view`, { ...opts, method: "POST", body: { idle } })
+  }
+
   setModel(sessionID: string, model: ModelRef, opts: RequestOptions = {}) {
     return this.request<unknown>(`/api/session/${sessionID}/model`, { ...opts, method: "POST", body: { model } })
   }

@@ -29,6 +29,13 @@ const UNREAD_KEY = "opencode-projects-studio.unread-sessions"
 /** How often the sweep reconciles the directories holding a blocked conversation. */
 const SWEEP_MS = 2000
 
+/**
+ * How often the app re-reads the conversation it has marked unread, to notice a
+ * view posted by another client (the panel's tile click). Nothing broadcasts a
+ * view, so this is a poll - but a slow one, and only over the unread set.
+ */
+const VIEWED_SWEEP_MS = 5000
+
 /** Run `worker` over `items` with at most `limit` in flight at once. */
 async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length)
@@ -57,12 +64,15 @@ interface SessionSignals {
 
 const signals = ref<Record<string, SessionSignals>>({})
 const unread = ref<Set<string>>(loadUnread())
+/** Rows whose "this is not news" judgement has already been sent to the server. */
+const published = ref<Set<string>>(new Set())
 const globalLive = ref(false)
 
 /** Request id → session id, so a reply can clear the right conversation. */
 const requestSession = new Map<string, string>()
 
 let sweepTimer: ReturnType<typeof setInterval> | null = null
+let viewedTimer: ReturnType<typeof setInterval> | null = null
 let detachAttention: (() => void) | null = null
 let controller: AbortController | null = null
 let activeClient: ServerClient | null = null
@@ -147,7 +157,13 @@ export function useSessionState() {
       case "session.execution.interrupted": {
         if (!sessionID) break
         patch(sessionID, { status: "idle" })
-        markUnreadIfUnwatched(sessionID)
+        if (countsAsUnread({ isCurrent: sessions.currentID.value === sessionID, focused: !unfocused() })) {
+          markUnreadIfUnwatched(sessionID)
+        } else {
+          // This window watched it finish, so its row shows no green dot -
+          // publish that, or the panel would light one up.
+          void publishFinish(sessionID)
+        }
         break
       }
       case "session.tool.called":
@@ -372,6 +388,12 @@ export function useSessionState() {
     void follow(client)
     void sweepOnConnect(client)
     sweepTimer = setInterval(() => void sweep(), SWEEP_MS)
+    viewedTimer = setInterval(() => {
+      const client = activeClient
+      if (!client) return
+      publishReadRows(client)
+      if (unread.value.size) void reconcileViewed(client)
+    }, VIEWED_SWEEP_MS)
   }
 
   function stop() {
@@ -382,6 +404,8 @@ export function useSessionState() {
     globalLive.value = false
     if (sweepTimer) clearInterval(sweepTimer)
     sweepTimer = null
+    if (viewedTimer) clearInterval(viewedTimer)
+    viewedTimer = null
   }
 
   function reset() {
@@ -389,6 +413,7 @@ export function useSessionState() {
     signals.value = {}
     requestSession.clear()
     unread.value = new Set()
+    published.value = new Set()
     persistUnread()
   }
 
@@ -416,6 +441,105 @@ export function useSessionState() {
     if (!sessionID || !unread.value.has(sessionID)) return
     const next = new Set(unread.value)
     next.delete(sessionID)
+    unread.value = next
+    persistUnread()
+    void publishViewed(sessionID)
+  }
+
+  /** The idle stamp of a conversation, from whatever this app has cached. */
+  function idleOf(sessionID: string): number | undefined {
+    if (sessions.currentID.value === sessionID) {
+      const current = sessions.current.value
+      if (current?.time?.idle) return current.time.idle
+    }
+    for (const session of Object.values(projects.latest.value)) {
+      if (session?.id === sessionID && session.time?.idle) return session.time.idle
+    }
+    return undefined
+  }
+
+  /**
+   * Publish "I have seen this finish" to the server.
+   *
+   * The studio's own unread set is what tells a finish that was watched from one
+   * that was not, but it is private to this window. Posting the idle transition
+   * to `time.viewed` is what lets the panel clear the same conversation's green
+   * dot, so the two stay in step. Best effort: the app does not need it to work.
+   */
+  async function publishViewed(sessionID: string) {
+    const client = activeClient
+    if (!client) return
+    const idle = idleOf(sessionID)
+    if (!idle) return
+    try {
+      await client.viewSession(sessionID, idle)
+    } catch {
+      /* the marker is best effort */
+    }
+  }
+
+  /** The same, for a finish this window watched happen. */
+  async function publishFinish(sessionID: string) {
+    const client = activeClient
+    if (!client) return
+    try {
+      const info = await client.getSession(sessionID)
+      const idle = info?.time?.idle
+      if (idle) await client.viewSession(sessionID, idle)
+    } catch {
+      /* the marker is best effort */
+    }
+  }
+
+  /**
+   * Tell the server about the rows this window is *not* flagging.
+   *
+   * The studio's dot is its own judgement - a finish it watched, or one the user
+   * has since opened, is not news - and the panel can only show the same dot if
+   * the server knows it. Walking the rows already on screen is also what
+   * backfills the marker the first time the two meet, so the panel does not open
+   * with a row of green for conversations this app has long since read.
+   */
+  function publishReadRows(client: ServerClient) {
+    for (const session of Object.values(projects.latest.value)) {
+      if (!session) continue
+      const idle = session.time?.idle
+      if (!idle) continue
+      if (unread.value.has(session.id)) continue
+      if (session.time?.viewed && session.time.viewed >= idle) continue
+      if (published.value.has(session.id)) continue
+      published.value = new Set(published.value).add(session.id)
+      void client.viewSession(session.id, idle).catch(() => {
+        const next = new Set(published.value)
+        next.delete(session.id)
+        published.value = next
+      })
+    }
+  }
+
+  /**
+   * Drop conversations the server says somebody has already looked at.
+   *
+   * The panel posts the same marker when its tile is acknowledged, so this is
+   * how a click in the panel clears the studio's dot. Nothing broadcasts a view,
+   * so it is read back on a slow timer (see `start`).
+   */
+  async function reconcileViewed(client: ServerClient) {
+    const ids = [...unread.value]
+    if (!ids.length) return
+    const viewed = new Set<string>()
+    await mapLimit(ids.slice(0, 40), 4, async (sessionID) => {
+      try {
+        const info = await client.getSession(sessionID)
+        const idle = info?.time?.idle
+        if (idle && info?.time?.viewed && info.time.viewed >= idle) viewed.add(sessionID)
+      } catch {
+        /* unread: leave that one alone */
+      }
+    })
+    if (!viewed.size) return
+    const next = new Set(unread.value)
+    for (const sessionID of viewed) next.delete(sessionID)
     unread.value = next
     persistUnread()
   }
