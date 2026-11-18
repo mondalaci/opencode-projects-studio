@@ -166,19 +166,23 @@ function isCompose(block: AssistantToolBlock): boolean {
 
 <template>
   <template v-if="!hidden">
-    <div v-if="note" class="note">{{ note }}</div>
+    <div v-if="note" class="message note-row"><div class="note">{{ note }}</div></div>
 
     <template v-else-if="notice">
-      <div v-if="!notice.foldable" class="note">{{ notice.text }}</div>
-      <div v-else class="notice">
-        <button class="notice-head" :aria-expanded="noticeOpen" @click="noticeOpen = !noticeOpen">
-          <ChevronRight :size="13" class="notice-chevron" :class="{ open: noticeOpen }" />
-          <span class="notice-label">{{ notice.label }}</span>
-          <span class="notice-preview">{{ notice.preview }}</span>
-        </button>
-        <!-- Shown as it arrived: this is the text the model was handed, down to
-             its markdown furniture. -->
-        <div v-if="noticeOpen" class="notice-body">{{ notice.text }}</div>
+      <!-- A note is part of the conversation, so it sits in the row a message
+           does: same column, and past the gutter the avatars reserve. -->
+      <div v-if="!notice.foldable" class="message note-row"><div class="note">{{ notice.text }}</div></div>
+      <div v-else class="message note-row">
+        <div class="notice">
+          <button class="notice-head" :aria-expanded="noticeOpen" @click="noticeOpen = !noticeOpen">
+            <ChevronRight :size="13" class="notice-chevron" :class="{ open: noticeOpen }" />
+            <span class="notice-label">{{ notice.label }}</span>
+            <span class="notice-preview">{{ notice.preview }}</span>
+          </button>
+          <!-- Shown as it arrived: this is the text the model was handed, down to
+               its markdown furniture. -->
+          <div v-if="noticeOpen" class="notice-body">{{ notice.text }}</div>
+        </div>
       </div>
     </template>
 
@@ -259,9 +263,11 @@ function isCompose(block: AssistantToolBlock): boolean {
 
 <style scoped>
 .note {
-  max-width: var(--content-width);
-  margin: 6px auto;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  margin: 0 0 0 var(--avatar-gutter);
   color: var(--text-faint);
   font-size: 12px;
   font-family: var(--font-mono);
@@ -271,9 +277,11 @@ function isCompose(block: AssistantToolBlock): boolean {
 /* A notice long enough to be a document: one line that opens onto the whole
    text, so an instruction update does not push the conversation off screen. */
 .notice {
-  max-width: var(--content-width);
-  margin: 6px auto;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  margin: 0 0 0 var(--avatar-gutter);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
@@ -357,6 +365,11 @@ function isCompose(block: AssistantToolBlock): boolean {
   justify-content: flex-end;
 }
 .message.assistant {
+  justify-content: flex-start;
+}
+/* A row without a bubble — a note or a notice — lays out from the left, in the
+   same column a message's content uses. */
+.message.note-row {
   justify-content: flex-start;
 }
 .avatar {
