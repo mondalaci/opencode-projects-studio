@@ -117,8 +117,9 @@ export function useTray() {
     for (const project of actionable.slice(0, 12)) {
       const top = project.conversations[0]
       const label = `${project.name} — ${top?.reason ?? project.state}`
-      // One conversation per project today, so the project entry is the item;
-      // the submenu appears only when there is more than one to choose between.
+      // A project with a single conversation *is* that conversation, so the label
+      // is also the item. Several — the recent ones and the ones wanting
+      // attention — become a submenu, so each is reachable on its own.
       if (project.conversations.length > 1) {
         items.push({
           label,

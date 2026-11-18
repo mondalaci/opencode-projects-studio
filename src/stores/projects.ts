@@ -19,6 +19,14 @@ const loaded = ref(false)
 /** How many projects still need their newest conversation fetched. */
 const pending = ref(0)
 
+/**
+ * How recently a conversation must have changed to keep its line on a collapsed
+ * project row. Older conversations are still listed — and still announced — when
+ * they want attention; the window is only what makes an *idle* conversation old
+ * enough to fold away behind the row's chevron.
+ */
+export const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
+
 /** Conversations fetched per page when an expanded project row loads. */
 const CHATS_PAGE_SIZE = 100
 /**
@@ -37,6 +45,16 @@ const chatsPending = ref<Record<string, true>>({})
 const counts = ref<Record<string, number>>({})
 /** Total amount (USD) each project has spent, once it has been read. */
 const costs = ref<Record<string, number>>({})
+
+/**
+ * Root conversations of a project that changed recently, newest first.
+ *
+ * The collapsed row and the tray list these alongside the project's newest
+ * conversation, so a conversation that got a notification does not disappear
+ * from view the moment a newer one supersedes it. Bounded by `RECENT_WINDOW_MS`,
+ * which is what keeps an idle conversation from standing on the row forever.
+ */
+const recent = ref<Record<string, SessionInfo[]>>({})
 
 /**
  * Project directories this client has itself found to be gone.
@@ -94,6 +112,16 @@ function rootsByNewest(list: SessionInfo[]): SessionInfo[] {
   return list
     .filter((session) => !session.parentID)
     .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
+}
+
+/** When a conversation last changed, for the recent window and for ordering. */
+function updatedAt(session: { time?: SessionInfo["time"] }): number {
+  return session.time?.updated ?? session.time?.created ?? 0
+}
+
+/** Whether a conversation changed recently enough to stay on a collapsed row. */
+function withinWindow(session: { time?: SessionInfo["time"] }, now = Date.now()): boolean {
+  return now - updatedAt(session) < RECENT_WINDOW_MS
 }
 
 /** A project's conversations and what it has spent in total. */
@@ -245,10 +273,82 @@ export function useProjects() {
   function setLatest(target: string | null | undefined, session: SessionInfo) {
     if (!target || session.parentID) return
     upsertChat(target, session)
+    rememberRecent(target, session)
     const current = latest.value[target]
     const next = session.time?.updated ?? session.time?.created ?? 0
     const existing = current?.time?.updated ?? current?.time?.created ?? 0
     if (!current || next >= existing) latest.value = { ...latest.value, [target]: session }
+  }
+
+  /**
+   * Keep a conversation on its project's recent list, which is what the collapsed
+   * row and the tray show beyond the newest conversation.
+   *
+   * A conversation already listed is always merged in place — an event for it is
+   * news whatever its age. One that is new to the list is only added when it
+   * changed recently, so a rename cannot drag a long-idle conversation back onto
+   * the row.
+   */
+  function rememberRecent(directory: string, session: Partial<SessionInfo> & { id: string }) {
+    if (session.parentID) return
+    const list = recent.value[directory] ?? []
+    const index = list.findIndex((item) => item.id === session.id)
+    if (index !== -1) {
+      recent.value = {
+        ...recent.value,
+        [directory]: rootsByNewest(list.map((item, i) => (i === index ? { ...item, ...session } : item))),
+      }
+      return
+    }
+    const updated = session.time?.updated ?? session.time?.created
+    // A conversation new to the list needs a known, recent change time to earn
+    // its place; a payload that only carries a title merges into an existing line.
+    if (updated === undefined || !withinWindow(session)) return
+    const now = Date.now()
+    const entry: SessionInfo = {
+      ...session,
+      id: session.id,
+      time: session.time ?? { created: now, updated: now },
+      location: session.location ?? { directory },
+    }
+    recent.value = { ...recent.value, [directory]: rootsByNewest([entry, ...list]) }
+  }
+
+  /** Drop a deleted conversation from the recent list too. */
+  function forgetRecent(sessionID: string) {
+    let changed = false
+    const next: Record<string, SessionInfo[]> = {}
+    for (const [directory, list] of Object.entries(recent.value)) {
+      if (list.some((item) => item.id === sessionID)) {
+        next[directory] = list.filter((item) => item.id !== sessionID)
+        changed = true
+      } else {
+        next[directory] = list
+      }
+    }
+    if (changed) recent.value = next
+  }
+
+  /** A project's recently changed conversations, newest first. */
+  function recentFor(directory: string | null | undefined): SessionInfo[] {
+    if (!directory) return []
+    return recent.value[directory] ?? []
+  }
+
+  /** A conversation this client has cached anywhere, so its title can be found. */
+  function findSession(sessionID: string): SessionInfo | undefined {
+    for (const session of Object.values(latest.value)) {
+      if (session?.id === sessionID) return session
+    }
+    for (const list of Object.values(recent.value)) {
+      const hit = list.find((item) => item.id === sessionID)
+      if (hit) return hit
+    }
+    for (const list of Object.values(chats.value)) {
+      const hit = list.find((item) => item.id === sessionID)
+      if (hit) return hit
+    }
+    return undefined
   }
 
   /**
@@ -277,6 +377,7 @@ export function useProjects() {
       }
     }
     if (changed) chats.value = next
+    forgetRecent(sessionID)
   }
 
   /** Forget everything cached for a project that no longer exists. */
@@ -285,6 +386,11 @@ export function useProjects() {
       const next = { ...latest.value }
       delete next[directory]
       latest.value = next
+    }
+    if (directory in recent.value) {
+      const next = { ...recent.value }
+      delete next[directory]
+      recent.value = next
     }
     if (directory in chats.value) {
       const next = { ...chats.value }
@@ -345,6 +451,7 @@ export function useProjects() {
     try {
       const { roots, cost } = await fetchSessions(client, directory)
       chats.value = { ...chats.value, [directory]: roots }
+      recent.value = { ...recent.value, [directory]: roots.filter((session) => withinWindow(session)) }
       counts.value = { ...counts.value, [directory]: roots.length }
       costs.value = { ...costs.value, [directory]: cost }
     } catch {
@@ -401,14 +508,17 @@ export function useProjects() {
         }
       })
       const next: Record<string, SessionInfo | null> = {}
+      const nextRecent: Record<string, SessionInfo[]> = {}
       const nextCounts: Record<string, number> = {}
       const nextCosts: Record<string, number> = {}
       for (const [worktree, sessions] of results) {
         next[worktree] = sessions.roots[0] ?? null
+        nextRecent[worktree] = sessions.roots.filter((session) => withinWindow(session))
         nextCounts[worktree] = sessions.roots.length
         nextCosts[worktree] = sessions.cost
       }
       latest.value = next
+      recent.value = nextRecent
       counts.value = nextCounts
       costs.value = nextCosts
       loaded.value = true
@@ -424,6 +534,7 @@ export function useProjects() {
     try {
       const { roots, cost } = await fetchSessions(client, target)
       latest.value = { ...latest.value, [target]: roots[0] ?? null }
+      recent.value = { ...recent.value, [target]: roots.filter((session) => withinWindow(session)) }
       counts.value = { ...counts.value, [target]: roots.length }
       costs.value = { ...costs.value, [target]: cost }
     } catch {
@@ -452,6 +563,13 @@ export function useProjects() {
           [directory]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
         }
       }
+      const list2 = recent.value[directory]
+      if (list2?.some((item) => item.id === sessionID)) {
+        recent.value = {
+          ...recent.value,
+          [directory]: list2.map((item) => (item.id === sessionID ? { ...item, title } : item)),
+        }
+      }
       return
     }
     for (const [key, session] of Object.entries(latest.value)) {
@@ -463,6 +581,14 @@ export function useProjects() {
       if (list.some((item) => item.id === sessionID)) {
         chats.value = {
           ...chats.value,
+          [key]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
+        }
+      }
+    }
+    for (const [key, list] of Object.entries(recent.value)) {
+      if (list.some((item) => item.id === sessionID)) {
+        recent.value = {
+          ...recent.value,
           [key]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
         }
       }
@@ -482,14 +608,32 @@ export function useProjects() {
     const dir = directory ?? (data.location as { directory?: string } | undefined)?.directory
     if (type === "session.created" || type === "session.updated") {
       if (dir && !data.parentID) {
+        const id = data.sessionID as string | undefined
         const existing = latest.value[dir]
         // Only track the newest; the event's partial info is enough to update
         // the row's title/time without a refetch.
-        if (existing && existing.id === (data.sessionID as string)) {
+        if (id && existing && existing.id === id) {
           latest.value = {
             ...latest.value,
             [dir]: { ...existing, title: (data.title as string) ?? existing.title },
           }
+        }
+        // A brand-new conversation is by definition recent, so it takes a
+        // timestamp of its own; an update merges into a line only if it is
+        // already listed, which keeps a stale conversation off the row.
+        if (id) {
+          const now = Date.now()
+          rememberRecent(
+            dir,
+            type === "session.created"
+              ? {
+                  id,
+                  title: data.title as string | undefined,
+                  projectID: data.projectID as SessionInfo["projectID"],
+                  time: { created: now, updated: now },
+                }
+              : { id, title: data.title as string | undefined },
+          )
         }
       }
     } else if (type === "session.renamed") {
@@ -524,6 +668,7 @@ export function useProjects() {
 
   function reset() {
     latest.value = {}
+    recent.value = {}
     loaded.value = false
     pending.value = 0
     loading.value = false
@@ -540,6 +685,7 @@ export function useProjects() {
     hiddenEntries,
     mostRecent,
     latest,
+    recent,
     loading,
     loaded,
     pending,
@@ -547,6 +693,8 @@ export function useProjects() {
     current: computed(() => directory.value ?? null),
     projectName,
     latestFor,
+    recentFor,
+    findSession,
     setLatest,
     forgetChat,
     forgetProject,

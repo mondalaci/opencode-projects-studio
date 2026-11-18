@@ -12,16 +12,19 @@ It keeps the whole chat experience — streaming Markdown, reasoning blocks, too
 calls, permissions and questions — and reorganises it around projects instead of
 conversations:
 
-- **Projects sidebar** — every project the server knows about, each showing one
-  conversation: its newest. The list is ordered by most recent activity, and the
-  newest conversation of the busiest project is what opens on launch. Each row
-  also carries the project's total spend, subagent sessions included, which grows
-  as turns finish. The chevron on a project row expands it to list that project's
-  conversations (newest first); `Alt`+`L` toggles the current project's row. Each
-  row's `⋯` menu hides the project or deletes it for good (behind a
-  confirmation), and a **Hidden** section folds away at the bottom of the list to
-  bring one back. Each conversation's own `⋯` menu renames it or deletes it for
-  good, also behind a confirmation.
+- **Projects sidebar** — every project the server knows about, each showing the
+  conversations that still matter: the ones that changed in the last 24 hours and
+  the ones that want attention (blocked, or finished and not yet opened), newest
+  first — so a conversation that raised a notification does not vanish behind a
+  newer one. A project with none of those folds to its newest conversation alone.
+  The list is ordered by most recent activity, and the newest conversation of the
+  busiest project is what opens on launch. Each row also carries the project's
+  total spend, subagent sessions included, which grows as turns finish. The
+  chevron on a project row expands it to list *every* conversation (newest first);
+  `Alt`+`L` toggles the current project's row. Each row's `⋯` menu hides the
+  project or deletes it for good (behind a confirmation), and a **Hidden** section
+  folds away at the bottom of the list to bring one back. Each conversation's own
+  `⋯` menu renames it or deletes it for good, also behind a confirmation.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
   beside the title and the staged ones under their own heading. It re-scans the
@@ -33,11 +36,12 @@ conversations:
   highlighting, `+n −m` statistics, a change map down the right edge and change
   bars in the gutter. Clicking an image in a conversation enlarges it to the
   window, and clicking again returns it.
-- **Conversation state dots** — every project row carries a dot for its newest
-  conversation: red blocked, amber working, green done and not yet opened, grey
-  idle.
+- **Conversation state dots** — every listed conversation carries a dot: red
+  blocked, amber working, green done and not yet opened, grey idle. A project's
+  own state is the most actionable of its conversations.
 - **Tray icon** — the same state rolled up across all projects into one badge,
-  with a menu that jumps straight to the conversation that needs you.
+  with a menu that jumps straight to the conversation that needs you; a project
+  with several conversations worth showing becomes a submenu of them.
 
 Chat and diffs share the centre pane: opening a diff replaces the conversation
 until you go back (the `←` button or `Esc`).
@@ -171,12 +175,12 @@ scripts/
   dev.mjs            Starts Vite, waits for the port, then launches Electron
 src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   api/desktop.ts     Typed access to the preload bridge
-  stores/projects.ts One conversation per project, plus its expanded chat list
+  stores/projects.ts One newest conversation per project, plus its recent and expanded lists
   stores/hiddenProjects.ts  The hidden-project list, read and written through the runtime config
   stores/git.ts      Source-control state: status polling, selection, diffs
   stores/layout.ts   Source-control panel width
   stores/desktopWindow.ts  Maximized state for the chromeless frame
-  stores/sessionState.ts   Conversation state for every project and the tray
+  stores/sessionState.ts   Visible conversation set per project, the tray state and the unread marks
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
   stores/find.ts     Find-in-conversation state (Ctrl+F)
   components/
@@ -294,6 +298,15 @@ needs you without the window in front. It rolls up in two steps:
    `blocked > retry/error > working > done (unacknowledged) > idle`.
 3. **Tray** — the same precedence across projects, plus the counts.
 
+A project does not roll up from a single conversation. Each row — and each
+project's menu entry — lists every conversation that is *recent* or wants
+attention: anything that changed in the last 24 hours, plus anything blocked or
+finished-and-unopened however long it has been waiting, plus the project's newest
+conversation. A conversation that got a notification therefore keeps its line
+even after a newer one arrives, and a project that has been sitting on an
+unanswered block still counts as needing you. The idle conversations that have
+aged out are what the row's chevron is for.
+
 The badge is baked into the icon bitmap, since trays have no numeric-badge API:
 the mark's cog in monochrome — so it sits with the panel's own icons rather than standing out
 as a coloured tile — carrying a state dot with the number of *projects* needing
@@ -306,7 +319,7 @@ grey the sidebar uses disappears against a dark panel at tray size.
 | --- | --- |
 | Left click | Toggle the window (where the platform delivers click events) |
 | Double click | Raise the window, showing the last active conversation |
-| Menu | The rollup, one entry per actionable project (and per conversation), then Open / Mute notifications / Quit |
+| Menu | The rollup, one entry per actionable project, a submenu when it lists several conversations, then Open / Mute notifications / Quit |
 
 On Linux the tray is an AppIndicator, which only really supports a menu: a left
 click opens the menu rather than toggling the window, so "Open OpenCode Projects

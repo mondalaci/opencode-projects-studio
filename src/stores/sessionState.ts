@@ -1,7 +1,7 @@
 import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
-import type { FormInfo, PermissionRequest, ServerEvent } from "@/api/types"
-import { useProjects } from "./projects"
+import { sessionDirectory, type FormInfo, type PermissionRequest, type ServerEvent, type SessionInfo } from "@/api/types"
+import { useProjects, RECENT_WINDOW_MS } from "./projects"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
 import {
@@ -62,11 +62,41 @@ interface SessionSignals {
   blockedDirectory?: string
 }
 
+/** A conversation a project's collapsed row and the tray list. */
+export interface VisibleConversation {
+  id: string
+  title: string
+  state: ConversationState
+  reason: string
+  /** When it last changed, for ordering newest first. */
+  time: number
+}
+
 const signals = ref<Record<string, SessionSignals>>({})
 const unread = ref<Set<string>>(loadUnread())
 /** Rows whose "this is not news" judgement has already been sent to the server. */
 const published = ref<Set<string>>(new Set())
 const globalLive = ref(false)
+
+/**
+ * Conversation id → title and directory, for conversations the recent list does
+ * not hold.
+ *
+ * The collapsed project row and the tray show every conversation that is recent
+ * *or* wants attention, and a conversation that has been waiting since before
+ * the window is exactly the one the recent list drops — so its name has to come
+ * from somewhere. Anything this app has cached is read from the projects store;
+ * the rest is fetched once and remembered here.
+ */
+const info = ref<Record<string, { title: string; directory: string; time: number }>>({})
+
+/** Conversations whose info fetch is already in flight. */
+const resolving = new Set<string>()
+
+/** The last whole minute, so the recent window can age rows out on its own. */
+let lastMinute = Math.floor(Date.now() / 60000)
+/** A ticking clock for the recent window, so a row folds away without an event. */
+const now = ref(Date.now())
 
 /** Request id → session id, so a reply can clear the right conversation. */
 const requestSession = new Map<string, string>()
@@ -110,6 +140,57 @@ export function useSessionState() {
     signals.value = { ...signals.value, [sessionID]: { ...current, ...next } }
   }
 
+  /** Remember a conversation's title and directory, so its row can name it. */
+  function remember(session: SessionInfo | null | undefined) {
+    if (!session?.id || session.parentID) return
+    const directory = sessionDirectory(session)
+    if (!directory) return
+    const title = session.title || "Untitled"
+    const time = session.time?.updated ?? session.time?.created ?? 0
+    const current = info.value[session.id]
+    if (current && current.title === title && current.directory === directory && current.time === time) return
+    info.value = { ...info.value, [session.id]: { title, directory, time } }
+  }
+
+  /**
+   * Resolve a conversation that wants attention to a name, reading what the app
+   * already has and falling back to one `getSession` when it has nothing.
+   */
+  async function resolveInfo(sessionID: string, directory?: string) {
+    if (info.value[sessionID]) return
+    const cached = projects.findSession(sessionID)
+    if (cached) {
+      remember(cached)
+      return
+    }
+    const client = activeClient
+    if (!client || resolving.has(sessionID)) return
+    resolving.add(sessionID)
+    try {
+      remember(await client.getSession(sessionID, directory ? { directory } : {}))
+    } catch {
+      /* best effort: the row falls back to an unnamed line */
+    } finally {
+      resolving.delete(sessionID)
+    }
+  }
+
+  /**
+   * Forget conversations that no longer need a name of their own: once one has
+   * no news it is shown, if at all, from the recent list, which carries its
+   * title. Without this the cache would keep every conversation the app has ever
+   * had to look up.
+   */
+  function pruneInfo() {
+    let changed = false
+    const next: typeof info.value = {}
+    for (const [id, entry] of Object.entries(info.value)) {
+      if (hasNews(id)) next[id] = entry
+      else changed = true
+    }
+    if (changed) info.value = next
+  }
+
   function setBlocked(sessionID: string, reason: string | undefined, directory?: string) {
     if (reason === undefined) {
       patch(sessionID, { blockedReason: undefined, blockedDirectory: undefined })
@@ -118,6 +199,7 @@ export function useSessionState() {
     // Keep the directory we already recorded when the event does not carry one.
     const current = signals.value[sessionID]?.blockedDirectory
     patch(sessionID, { blockedReason: reason, blockedDirectory: directory ?? current })
+    void resolveInfo(sessionID, directory)
   }
 
   function markUnreadIfUnwatched(sessionID: string) {
@@ -127,6 +209,7 @@ export function useSessionState() {
     ) {
       unread.value = new Set(unread.value).add(sessionID)
       persistUnread()
+      void resolveInfo(sessionID)
     }
   }
 
@@ -207,6 +290,11 @@ export function useSessionState() {
         break
     }
 
+    // A conversation working now has activity now, so it earns a row even when
+    // its own record has aged out of the recent window; the lookup gives it a
+    // name, and `hasNews` is what keeps it listed until it settles.
+    if (sessionID && isWorking(sessionID)) void resolveInfo(sessionID, directory)
+
     // The same events also keep every project's newest conversation current.
     // `session.renamed` is how an auto-generated title reaches the sidebar, so a
     // project that is not the open one updates its row without a refetch too.
@@ -273,6 +361,7 @@ export function useSessionState() {
     }
     for (const [sessionID, entry] of found) {
       next[sessionID] = { ...next[sessionID], blockedReason: entry.reason, blockedDirectory: entry.directory }
+      void resolveInfo(sessionID, entry.directory)
     }
     signals.value = next
   }
@@ -387,12 +476,23 @@ export function useSessionState() {
     watchWindow()
     void follow(client)
     void sweepOnConnect(client)
-    sweepTimer = setInterval(() => void sweep(), SWEEP_MS)
+    // Unread conversations persisted from a previous run have no title in cache
+    // yet; one lookup each fills their rows in without waiting for the timer.
+    for (const sessionID of unread.value) void resolveInfo(sessionID)
+    sweepTimer = setInterval(() => {
+      const minute = Math.floor(Date.now() / 60000)
+      if (minute !== lastMinute) {
+        lastMinute = minute
+        now.value = Date.now()
+      }
+      void sweep()
+    }, SWEEP_MS)
     viewedTimer = setInterval(() => {
       const client = activeClient
       if (!client) return
       publishReadRows(client)
       if (unread.value.size) void reconcileViewed(client)
+      pruneInfo()
     }, VIEWED_SWEEP_MS)
   }
 
@@ -411,6 +511,8 @@ export function useSessionState() {
   function reset() {
     stop()
     signals.value = {}
+    info.value = {}
+    resolving.clear()
     requestSession.clear()
     unread.value = new Set()
     published.value = new Set()
@@ -452,9 +554,8 @@ export function useSessionState() {
       const current = sessions.current.value
       if (current?.time?.idle) return current.time.idle
     }
-    for (const session of Object.values(projects.latest.value)) {
-      if (session?.id === sessionID && session.time?.idle) return session.time.idle
-    }
+    const cached = projects.findSession(sessionID)
+    if (cached?.time?.idle) return cached.time.idle
     return undefined
   }
 
@@ -483,8 +584,9 @@ export function useSessionState() {
     const client = activeClient
     if (!client) return
     try {
-      const info = await client.getSession(sessionID)
-      const idle = info?.time?.idle
+      const session = await client.getSession(sessionID)
+      remember(session)
+      const idle = session?.time?.idle
       if (idle) await client.viewSession(sessionID, idle)
     } catch {
       /* the marker is best effort */
@@ -530,9 +632,10 @@ export function useSessionState() {
     const viewed = new Set<string>()
     await mapLimit(ids.slice(0, 40), 4, async (sessionID) => {
       try {
-        const info = await client.getSession(sessionID)
-        const idle = info?.time?.idle
-        if (idle && info?.time?.viewed && info.time.viewed >= idle) viewed.add(sessionID)
+        const session = await client.getSession(sessionID)
+        remember(session)
+        const idle = session?.time?.idle
+        if (idle && session?.time?.viewed && session.time.viewed >= idle) viewed.add(sessionID)
       } catch {
         /* unread: leave that one alone */
       }
@@ -544,22 +647,89 @@ export function useSessionState() {
     persistUnread()
   }
 
+  /** Whether a conversation wants a human right now: blocked, or done and unread. */
+  function wantsAttention(sessionID: string): boolean {
+    return Boolean(signals.value[sessionID]?.blockedReason) || unread.value.has(sessionID)
+  }
+
+  /** Whether a conversation is working right now, which is activity in itself. */
+  function isWorking(sessionID: string): boolean {
+    const status = signals.value[sessionID]?.status
+    return status === "busy" || status === "retry"
+  }
+
+  /**
+   * Whether a conversation has news worth a line on its project's row, beyond
+   * the recent list: it wants a human, or it is working now.
+   */
+  function hasNews(sessionID: string): boolean {
+    return wantsAttention(sessionID) || isWorking(sessionID)
+  }
+
+  /**
+   * The conversations a project's collapsed row and the tray show, newest first:
+   * the ones that changed recently, the project's newest, and anything that wants
+   * attention however long it has been waiting.
+   *
+   * The recent list is bounded and the newest is one row, so the only unbounded
+   * part is the attention set — which is exactly what must not be lost, since a
+   * blocked conversation that has sat for a day is the one most in need of a row.
+   */
+  const visibleByDirectory = computed<Record<string, VisibleConversation[]>>(() => {
+    const map: Record<string, VisibleConversation[]> = {}
+    const cutoff = now.value - RECENT_WINDOW_MS
+    for (const entry of projects.entries.value) {
+      const directory = entry.directory
+      const found = new Map<string, { id: string; title: string; time: number }>()
+
+      for (const session of projects.recentFor(directory)) {
+        const time = session.time?.updated ?? session.time?.created ?? 0
+        if (time < cutoff) continue
+        found.set(session.id, { id: session.id, title: session.title || "Untitled", time })
+      }
+      // The project's newest conversation is always the row's summary.
+      if (entry.session) {
+        const time = entry.session.time?.updated ?? entry.session.time?.created ?? 0
+        found.set(entry.session.id, { id: entry.session.id, title: entry.session.title || "Untitled", time })
+      }
+      // Anything with news, even once it has aged out of the window — blocked,
+      // done-and-unopened, or working now — named from the cache the lookups
+      // above keep filled. Only resolved conversations land here, and the
+      // resolver drops subagents, so a child's own permission can never put a
+      // line on its parent's row.
+      for (const [id, cached] of Object.entries(info.value)) {
+        if (cached.directory !== directory) continue
+        if (!hasNews(id)) continue
+        if (found.has(id)) continue
+        found.set(id, { id, title: cached.title, time: cached.time })
+      }
+
+      map[directory] = [...found.values()]
+        .sort((a, b) => b.time - a.time)
+        .map((item) => ({ ...item, state: stateFor(item.id), reason: reasonFor(item.id) }))
+    }
+    return map
+  })
+
+  /** The conversations a project's collapsed row and the tray show, newest first. */
+  function visibleFor(directory: string | null | undefined): VisibleConversation[] {
+    if (!directory) return []
+    return visibleByDirectory.value[directory] ?? []
+  }
+
   /** One rollup entry per project, for the sidebar and the tray. */
   const projectRollup = computed<ProjectRollup[]>(() =>
     rollupProjects(
       projects.entries.value.map((entry) => ({
         id: entry.directory,
         name: entry.name,
-        conversations: entry.session
-          ? [
-              {
-                id: entry.session.id,
-                title: entry.session.title || "Untitled",
-                state: stateFor(entry.session.id),
-                reason: reasonFor(entry.session.id),
-              },
-            ]
-          : [],
+        conversations:
+          visibleByDirectory.value[entry.directory]?.map((conversation) => ({
+            id: conversation.id,
+            title: conversation.title,
+            state: conversation.state,
+            reason: conversation.reason,
+          })) ?? [],
       })),
     ),
   )
@@ -572,6 +742,7 @@ export function useSessionState() {
     globalLive,
     projectRollup,
     trayRollup,
+    visibleFor,
     stateFor,
     reasonFor,
     markSeen,

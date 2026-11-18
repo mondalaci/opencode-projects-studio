@@ -7,7 +7,6 @@ import FilterBar from "./FilterBar.vue"
 import ProjectMenu from "./ProjectMenu.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import Spinner from "./Spinner.vue"
-import type { SessionInfo } from "@/api/types"
 import { projectDeleteAvailable } from "@/api/desktop"
 import { useApp } from "@/stores/app"
 import { requestComposerFocus } from "@/stores/draft"
@@ -34,7 +33,7 @@ const {
 } = app.projects
 const { openProject, deleteSession, renameSession, selectSession, switchProject, hideProject, unhideProject, deleteProject } =
   app
-const { stateFor, reasonFor } = useSessionState()
+const { stateFor, reasonFor, visibleFor } = useSessionState()
 const { writable: hiddenWritable, error: hiddenError } = app.hidden
 
 /** Whether the sidebar can hide projects, and whether it can delete them. */
@@ -102,7 +101,7 @@ const pendingChatDelete = ref<{ id: string; title: string; directory: string } |
 const deletingChat = ref(false)
 const chatDeleteError = ref<string | null>(null)
 
-function askDeleteChat(chat: SessionInfo, directory: string) {
+function askDeleteChat(chat: { id: string; title?: string }, directory: string) {
   chatDeleteError.value = null
   pendingChatDelete.value = { id: chat.id, title: chat.title || "Untitled", directory }
 }
@@ -194,12 +193,18 @@ function isPending(entry: ProjectEntry) {
   return !entry.session && loading.value && pending.value > 0
 }
 
-function conversationTitle(entry: ProjectEntry) {
-  return entry.session ? entry.session.title || "Untitled" : "No conversation yet"
+/**
+ * The conversations a collapsed project row lists: everything recent, plus
+ * anything that wants attention, plus the project's newest — newest first.
+ */
+function projectConversations(entry: ProjectEntry) {
+  return visibleFor(entry.directory)
 }
 
+/** When the project last changed, from its newest listed conversation. */
 function conversationTime(entry: ProjectEntry) {
-  return relativeTime(entry.session?.time?.updated ?? entry.session?.time?.created)
+  const newest = projectConversations(entry)[0]
+  return relativeTime(newest?.time ?? entry.session?.time?.updated ?? entry.session?.time?.created)
 }
 
 /** How many conversations a project holds, or `undefined` until it is counted. */
@@ -223,15 +228,6 @@ function costTitle(entry: ProjectEntry) {
   return `Total cost: ${formatCost(projectCost(entry))}`
 }
 
-/** The state dot for a project's conversation. */
-function conversationState(entry: ProjectEntry) {
-  return stateFor(entry.session?.id)
-}
-
-function conversationStateTitle(entry: ProjectEntry) {
-  return entry.session ? reasonFor(entry.session.id) : "no conversation"
-}
-
 /* ------------------------------- inline rename ------------------------------ */
 
 /** Whether a conversation's title is currently being edited inline. */
@@ -248,7 +244,7 @@ function setRenameInput(el: Element | { $el?: Element } | null) {
   editInput.value = node instanceof HTMLInputElement ? node : null
 }
 
-async function startRename(session: SessionInfo, directory: string) {
+async function startRename(session: { id: string; title?: string }, directory: string) {
   editing.value = { id: session.id, directory }
   editTitle.value = session.title || ""
   await nextTick()
@@ -299,7 +295,7 @@ function unhide(entry: ProjectEntry) {
 }
 
 /** Open one conversation, switching to its project first when it lives elsewhere. */
-async function openChat(entry: ProjectEntry, chat: SessionInfo) {
+async function openChat(entry: ProjectEntry, chat: { id: string }) {
   // A refused switch — the project's folder is gone — leaves the app on the
   // project it was on, so a conversation of the other one must not be opened on
   // top of it.
@@ -478,29 +474,43 @@ function onKeydown(event: KeyboardEvent) {
             <Spinner v-if="isPending(entry)" :size="11" />
             <span v-else class="time">{{ conversationTime(entry) }}</span>
           </span>
-          <!-- The newest conversation is the collapsed summary; once expanded the
-               full list below carries it instead. -->
-          <span v-if="!isExpanded(entry.directory)" class="line conversation">
-            <span
-              class="state-dot"
-              :class="conversationState(entry)"
-              :title="conversationStateTitle(entry)"
-            ></span>
-            <input
-              v-if="isEditing(entry.session?.id)"
-              :ref="setRenameInput"
-              v-model="editTitle"
-              class="rename"
-              @click.stop
-              @keydown.enter.prevent="commitRename"
-              @keydown.esc.prevent="cancelRename"
-              @blur="commitRename"
-            />
-            <span v-else class="chat-title">{{ conversationTitle(entry) }}</span>
-          </span>
         </button>
 
-        <div v-if="isExpanded(entry.directory)" class="chats">
+        <!-- A collapsed row lists every conversation worth showing — the recent
+             ones and the ones wanting attention — newest first. The chevron's
+             full list is for the idle ones that have aged out. -->
+        <div v-if="!isExpanded(entry.directory)" class="chats summary">
+          <div
+            v-for="chat in projectConversations(entry)"
+            :key="chat.id"
+            class="chat"
+            :class="{ current: chat.id === app.sessions.currentID.value }"
+          >
+            <button class="chat-hit" @click="openChat(entry, chat)">
+              <span class="state-dot" :class="chat.state" :title="chat.reason"></span>
+              <input
+                v-if="isEditing(chat.id)"
+                :ref="setRenameInput"
+                v-model="editTitle"
+                class="rename"
+                @click.stop
+                @keydown.enter.prevent="commitRename"
+                @keydown.esc.prevent="cancelRename"
+                @blur="commitRename"
+              />
+              <span v-else class="chat-title">{{ chat.title }}</span>
+              <span class="chat-time">{{ relativeTime(chat.time) }}</span>
+            </button>
+            <ConversationMenu
+              v-if="!isEditing(chat.id)"
+              @rename="startRename(chat, entry.directory)"
+              @delete="askDeleteChat(chat, entry.directory)"
+            />
+          </div>
+          <p v-if="!projectConversations(entry).length" class="chats-note">No conversation yet.</p>
+        </div>
+
+        <div v-else class="chats">
           <p v-if="isChatsLoading(entry.directory)" class="chats-note"><Spinner :size="11" /> Loading chats…</p>
           <template v-else>
             <div
@@ -535,15 +545,6 @@ function onKeydown(event: KeyboardEvent) {
             <p v-if="!projectChats(entry).length" class="chats-note">No conversations yet.</p>
           </template>
         </div>
-
-        <!-- Collapsed rows name the newest conversation inline, so that is the
-             conversation the row's menu acts on. Expanded rows leave the actions
-             to the chat list above. -->
-        <ConversationMenu
-          v-if="entry.session && !isExpanded(entry.directory) && !isEditing(entry.session.id)"
-          @rename="startRename(entry.session, entry.directory)"
-          @delete="askDeleteChat(entry.session, entry.directory)"
-        />
       </div>
 
       <p v-if="!filtered.length && !loading" class="empty">
@@ -810,9 +811,6 @@ function onKeydown(event: KeyboardEvent) {
 .project.active .archived-badge {
   color: var(--text-muted);
 }
-.conversation {
-  padding-left: 19px;
-}
 /* Conversation state: the traffic light that the tray badge rolls up. */
 .state-dot {
   flex: none;
@@ -864,18 +862,11 @@ function onKeydown(event: KeyboardEvent) {
   color: var(--text);
   outline: none;
 }
-/* The actions button sits over the row's timestamp and shows on hover; the
+/* The actions button sits over the chat's timestamp and shows on hover; the
    trigger's own look lives in ConversationMenu. Rows scope it to themselves, so
    hovering a chat never reveals its siblings' buttons. */
-.project:hover > :deep(.conversation-menu),
 .chat:hover :deep(.conversation-menu) {
   opacity: 1;
-}
-/* A project row carries two menus: the project's own on the name line, and the
-   newest conversation's on the conversation line below it. */
-.project > :deep(.conversation-menu) {
-  top: auto;
-  bottom: 5px;
 }
 .project:hover > :deep(.project-menu) {
   opacity: 1;
