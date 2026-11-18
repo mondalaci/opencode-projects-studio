@@ -1,7 +1,8 @@
 import { computed, ref } from "vue"
-import type { ServerClient } from "@/api/client"
+import { ServerError, type ServerClient } from "@/api/client"
 import { normalizeOrigin } from "@/api/discovery"
 import { isRootDirectory } from "@/api/types"
+import { showNotice } from "./notice"
 import type {
   AgentInfo,
   CommandInfo,
@@ -187,6 +188,22 @@ export function useServer() {
     return null
   }
 
+  /**
+   * Whether a project directory's folder has been removed.
+   *
+   * Only the server's `LocationNotFoundError` answers yes. Everything else — a
+   * timeout, an unreachable server — says nothing about the folder, so it is left
+   * for `load` to report as the ordinary failure it is.
+   */
+  async function locationMissing(client: ServerClient, directory: string): Promise<boolean> {
+    try {
+      await client.location({ directory })
+      return false
+    } catch (cause) {
+      return cause instanceof ServerError && cause.locationNotFound
+    }
+  }
+
   async function load(client: ServerClient, instanceOrigin: string, directory?: string) {
     const changedOrigin = origin.value !== instanceOrigin
     origin.value = instanceOrigin
@@ -203,11 +220,27 @@ export function useServer() {
       // Never scope a request to `/`: opencode would resolve — and so create —
       // a project for it, which is exactly the stray "root" the sidebar hides.
       if (isRootDirectory(directory)) directory = undefined
-      let location = directory ? await client.location({ directory }).catch(() => null) : null
+      // A directory whose folder has been removed answers `LocationNotFoundError`,
+      // and that is *not* the same as a fresh connect with nothing chosen yet —
+      // only the latter should fall back to the server's own directory. Telling
+      // the two apart is what keeps a project that cannot be opened from turning
+      // into a silent landing somewhere else; there is nothing to stay on at
+      // startup, so the fallback stays, but it is reported.
+      let gone = false
+      let location: LocationInfo | null = null
+      if (directory) {
+        location = await client.location({ directory }).catch((cause) => {
+          gone = cause instanceof ServerError && cause.locationNotFound
+          return null
+        })
+      }
       let dir = directory && location ? directory : undefined
       if (!dir || !location) {
         location = await client.location().catch(() => null)
         dir = location?.directory ?? undefined
+        if (gone && directory) {
+          showNotice(`${directory} no longer exists — opened ${dir || "the server's own directory"} instead.`)
+        }
       }
       locationInfo.value = location
       selectedDirectory.value = dir ?? null
@@ -340,6 +373,7 @@ export function useServer() {
 
   return {
     locationInfo,
+    locationMissing,
     config,
     agents,
     providers,

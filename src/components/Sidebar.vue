@@ -6,6 +6,7 @@ import iconUrl from "../../build/icon.png"
 import ProjectsPanel from "./ProjectsPanel.vue"
 import SidebarSearch from "./SidebarSearch.vue"
 import { useApp } from "@/stores/app"
+import { clearNotice, notice, showNotice } from "@/stores/notice"
 import { openSearch, searchOpen } from "@/stores/search"
 
 const app = useApp()
@@ -19,20 +20,18 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
 
 /** Whether an "Add project" pick is running, so the button cannot be double-fired. */
 const addingProject = ref(false)
-/** Why adding a project failed, shown under the header until dismissed. */
-const addError = ref<string | null>(null)
 
 /** Pick a directory and register it as a project, then open it. */
 async function addProject() {
   if (addingProject.value) return
   addingProject.value = true
-  addError.value = null
+  clearNotice()
   try {
     const result = await app.addProject()
     // A cancelled picker reports no error: there is nothing to say about it.
-    if (!result.ok && result.error) addError.value = result.error
+    if (!result.ok && result.error) showNotice(result.error)
   } catch (cause) {
-    addError.value = cause instanceof Error ? cause.message : String(cause)
+    showNotice(cause instanceof Error ? cause.message : String(cause))
   } finally {
     addingProject.value = false
   }
@@ -66,7 +65,7 @@ async function addProject() {
         </button>
       </header>
 
-      <p v-if="addError" class="add-error" title="Dismiss" @click="addError = null">{{ addError }}</p>
+      <p v-if="notice" class="notice" title="Dismiss" @click="clearNotice()">{{ notice }}</p>
 
       <ProjectsPanel />
     </template>
@@ -140,8 +139,9 @@ async function addProject() {
 .icon:disabled {
   opacity: 0.5;
 }
-/* The "Add project" failure stays under the header until it is dismissed. */
-.add-error {
+/* The sidebar's one line of feedback — a project that would not open, or a
+   folder the app could not add — stays under the header until it is dismissed. */
+.notice {
   flex: none;
   margin: 0 8px 6px;
   padding: 5px 8px;

@@ -38,6 +38,17 @@ const counts = ref<Record<string, number>>({})
 /** Total amount (USD) each project has spent, once it has been read. */
 const costs = ref<Record<string, number>>({})
 
+/**
+ * Project directories this client has itself found to be gone.
+ *
+ * opencode archives a project when its folder disappears, but a stale twin row
+ * for the same directory can be left behind without that mark — and the sidebar
+ * collapses the twins into whichever one looks live. Finding it out from the
+ * `LocationNotFoundError` a switch answers with is what puts the badge on the row
+ * the server would have let look healthy.
+ */
+const missing = ref<Record<string, true>>({})
+
 /** A project together with the conversation the sidebar shows for it. */
 export interface ProjectEntry {
   directory: string
@@ -45,9 +56,12 @@ export interface ProjectEntry {
   project: ProjectInfo
   session: SessionInfo | null
   /**
-   * The project is archived on the server: its folder no longer exists, so
-   * opencode swept it out of the active list. Past conversations stay readable,
-   * but nothing new can run in it.
+   * The project is archived: its folder no longer exists, so opencode swept it
+   * out of the active list. Past conversations stay readable, but nothing new can
+   * run in it.
+   *
+   * True when the server says so *and* when this client has found the folder gone
+   * itself: a stale row can outlive the server's mark, so either word is enough.
    */
   archived: boolean
 }
@@ -162,7 +176,7 @@ export function useProjects() {
         name: projectName(project),
         project,
         session: latest.value[project.canonical] ?? null,
-        archived: Boolean(project.time?.archived),
+        archived: Boolean(project.time?.archived) || missing.value[project.canonical] === true,
       }))
       .sort((a, b) => {
         const aTime = a.session?.time?.updated ?? a.session?.time?.created ?? 0
@@ -198,10 +212,27 @@ export function useProjects() {
     return best
   })
 
-  /** Whether a project is archived (its folder no longer exists on the server). */
+  /**
+   * Whether a project is archived — the server's mark, or this client's own
+   * finding that the folder is gone.
+   */
   function isArchived(target: string | null | undefined): boolean {
     if (!target) return false
     return allEntries.value.some((entry) => entry.directory === target && entry.archived)
+  }
+
+  /** Record that a project's folder is gone, so its row says so from now on. */
+  function markMissing(directory: string) {
+    if (missing.value[directory]) return
+    missing.value = { ...missing.value, [directory]: true }
+  }
+
+  /** Forget that mark, once the directory resolves again. */
+  function clearMissing(directory: string) {
+    if (!missing.value[directory]) return
+    const next = { ...missing.value }
+    delete next[directory]
+    missing.value = next
   }
 
   /** Conversation shown for a project, if one is known. */
@@ -270,6 +301,7 @@ export function useProjects() {
       delete next[directory]
       costs.value = next
     }
+    clearMissing(directory)
     collapse(directory)
   }
 
@@ -500,6 +532,7 @@ export function useProjects() {
     chatsPending.value = {}
     counts.value = {}
     costs.value = {}
+    missing.value = {}
   }
 
   return {
@@ -523,6 +556,8 @@ export function useProjects() {
     countFor,
     costFor,
     isArchived,
+    markMissing,
+    clearMissing,
     recordCreated,
     loadChats,
     collapse,

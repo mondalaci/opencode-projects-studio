@@ -300,7 +300,10 @@ function unhide(entry: ProjectEntry) {
 
 /** Open one conversation, switching to its project first when it lives elsewhere. */
 async function openChat(entry: ProjectEntry, chat: SessionInfo) {
-  if (!isActive(entry)) await switchProject(entry.directory)
+  // A refused switch — the project's folder is gone — leaves the app on the
+  // project it was on, so a conversation of the other one must not be opened on
+  // top of it.
+  if (!isActive(entry) && !(await switchProject(entry.directory))) return
   await selectSession(chat.id)
   // Choosing a conversation is the same intent as choosing its project: start
   // typing there.
@@ -785,8 +788,8 @@ function onKeydown(event: KeyboardEvent) {
 .project.active .cost {
   color: var(--text-muted);
 }
-/* An archived project's folder is gone: the row stays so its past
-   conversations remain reachable, but it reads as inactive and offers no new
+/* An archived project's folder is gone: the row stays so its past conversations
+   are still listed, but it reads as inactive, refuses to open, and offers no new
    chat. */
 .project.archived .folder,
 .project.archived .name,

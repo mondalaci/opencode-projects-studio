@@ -43,6 +43,19 @@ export class ServerError extends Error {
   get unauthorized() {
     return this.status === 401
   }
+
+  /**
+   * The server's answer when a directory has no location: `LocationNotFoundError`.
+   *
+   * A project whose folder has been removed is the one failure the app has to
+   * tell apart from the rest — the server's project list can carry a stale row
+   * that still presents it as healthy, so this 404 is the only reliable word on
+   * it. Anything else (a timeout, an unreachable server) is not evidence that a
+   * folder is gone.
+   */
+  get locationNotFound() {
+    return this.status === 404 && this.body.includes("LocationNotFoundError")
+  }
 }
 
 export interface RequestOptions {

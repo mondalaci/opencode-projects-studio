@@ -10,6 +10,7 @@ import { useFiles } from "./files"
 import { useHiddenProjects } from "./hiddenProjects"
 import { useSessionState } from "./sessionState"
 import { useLive } from "./live"
+import { showNotice } from "./notice"
 import { useProjects, type ProjectEntry } from "./projects"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
@@ -68,8 +69,10 @@ export function useApp() {
       await projects.load(client)
 
       const target = projects.mostRecent.value?.directory ?? null
-      if (target && target !== server.directory.value) await switchProject(target)
-      else await loadScoped(client)
+      // A refused switch loaded nothing, so the directory the app is on still has
+      // to have its conversations and stream fetched.
+      const switched = target && target !== server.directory.value ? await switchProject(target) : false
+      if (!switched) await loadScoped(client)
 
       // One global stream keeps every project's conversation state (and the tray
       // rollup) current, not just the active project's.
@@ -129,7 +132,7 @@ export function useApp() {
     // A conversation that lives in the root placeholder is not openable: opening
     // it would make the app point at `/` and recreate the project.
     if (isRootDirectory(directory)) return false
-    if (directory && directory !== server.directory.value) await switchProject(directory)
+    if (directory && directory !== server.directory.value && !(await switchProject(directory))) return false
     await selectSession(sessionID)
     return true
   }
@@ -157,13 +160,28 @@ export function useApp() {
     draft.value = ""
   }
 
-  /** Switch the active project (directory) and reload everything scoped to it. */
-  async function switchProject(directory: string) {
+  /**
+   * Switch the active project (directory) and reload everything scoped to it.
+   *
+   * A project whose folder has been removed is refused before anything is torn
+   * down. Its location cannot be resolved, so the requests that follow would fall
+   * back to the server's own directory and strand the app on a project nobody
+   * asked for; saying so and staying where the user was is the honest answer.
+   *
+   * Returns whether the switch happened.
+   */
+  async function switchProject(directory: string): Promise<boolean> {
     const client = connection.client.value
-    if (!client) return
+    if (!client) return false
     // The root is opencode's placeholder, not a project to point at.
-    if (isRootDirectory(directory)) return
-    if (server.directory.value === directory) return
+    if (isRootDirectory(directory)) return false
+    if (server.directory.value === directory) return true
+    if (await server.locationMissing(client, directory)) {
+      projects.markMissing(directory)
+      showNotice(`${directory} no longer exists — its past conversations stay listed, but nothing new can run there.`)
+      return false
+    }
+    projects.clearMissing(directory)
     live.stop()
     chat.reset()
     sessions.reset()
@@ -174,18 +192,21 @@ export function useApp() {
     // The opened project's block is discovered here rather than by sweeping
     // every project at connect, which would boot every project's MCP fleet.
     await sessionState.reconcileProject(directory)
+    return true
   }
 
-  async function openProject(directory: string) {
+  async function openProject(directory: string): Promise<boolean> {
     const client = connection.client.value
-    if (!client) return
-    if (server.directory.value !== directory) await switchProject(directory)
+    if (!client) return false
+    // A refused switch leaves the current project — and its conversation — alone.
+    if (server.directory.value !== directory && !(await switchProject(directory))) return false
     // Only open a conversation that already exists. A project with none stays
     // empty until the first prompt creates its conversation, so simply opening
     // (or re-opening) a project never litters it with empty Untitled chats.
     const session = projects.latestFor(directory)
     if (session) await selectSession(session.id)
     requestComposerFocus()
+    return true
   }
 
   /**
@@ -194,7 +215,10 @@ export function useApp() {
    * project's newest conversation opens, and the composer takes focus.
    */
   async function cycleProject(delta: 1 | -1) {
-    const list = projects.entries.value
+    // A row whose folder is gone cannot be opened, so it is skipped rather than
+    // tried and refused on every press — which would leave the keyboard stuck on
+    // the same neighbour.
+    const list = projects.entries.value.filter((entry) => !entry.archived)
     if (!list.length) return
     const index = list.findIndex((entry) => entry.directory === server.directory.value)
     if (index === -1) {
@@ -221,9 +245,10 @@ export function useApp() {
     chat.reset()
     sessions.reset()
     fileViewer.close()
-    const next = projects.entries.value.find((entry) => entry.directory !== directory)
-    if (next) await openProject(next.directory)
-    else server.clearProject()
+    // Only a project that can actually be opened will take the app off this one,
+    // and one that refuses must not leave the app on the row being removed.
+    const next = projects.entries.value.find((entry) => entry.directory !== directory && !entry.archived)
+    if (!next || !(await openProject(next.directory))) server.clearProject()
   }
 
   /** Keep a project out of the sidebar, moving off it when it is the open one. */
