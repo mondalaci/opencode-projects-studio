@@ -18,6 +18,87 @@ import type { ChangeRange } from "./diff"
 const MAX_LINES = 3000
 
 /**
+ * The start of a here-document, e.g. `<<'EOF'` or `<<-DELIM`. The delimiter is
+ * the part that ends the body.
+ */
+const HEREDOC_START = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/g
+
+/**
+ * A run of a command: either shell to highlight, or a here-document body, which
+ * is data and is left alone.
+ */
+interface Segment {
+  code: boolean
+  text: string
+}
+
+/**
+ * Split a command into the runs of shell and the here-document bodies it feeds.
+ *
+ * The bash grammar has no notion of a here-document, so it reads the body as
+ * more script — which paints `for`, `in` and `then` inside a commit message as
+ * keywords, in the middle of ordinary prose. Cutting the bodies out keeps the
+ * grammar on the code that really is code.
+ *
+ * A `<<` that never gets its delimiter line (one inside a quoted string, say) is
+ * no here-document at all, so the rest of the command goes back to being code.
+ * The runs join back with newlines into the command exactly as it was given.
+ */
+function commandSegments(code: string): Segment[] {
+  const segments: Segment[] = []
+  const codeLines: string[] = []
+  let bodyLines: string[] | null = null
+  const delimiters: string[] = []
+
+  const endCode = () => {
+    if (!codeLines.length) return
+    segments.push({ code: true, text: codeLines.join("\n") })
+    codeLines.length = 0
+  }
+  const endBody = () => {
+    if (!bodyLines?.length) {
+      bodyLines = null
+      return
+    }
+    segments.push({ code: false, text: bodyLines.join("\n") })
+    bodyLines = null
+  }
+
+  for (const line of code.split("\n")) {
+    if (bodyLines) {
+      if (line.trim() !== delimiters[0]) {
+        bodyLines.push(line)
+        continue
+      }
+      // The delimiter line is shell again, and ends the body.
+      delimiters.shift()
+      endBody()
+      codeLines.push(line)
+      // A command can open several here-documents at once; their bodies follow
+      // one after the other.
+      if (delimiters.length) {
+        endCode()
+        bodyLines = []
+      }
+      continue
+    }
+
+    codeLines.push(line)
+    const starts = [...line.matchAll(HEREDOC_START)]
+    if (starts.length) {
+      delimiters.push(...starts.map((match) => match[1]))
+      endCode()
+      bodyLines = []
+    }
+  }
+
+  // A body that was never closed is not one; its lines were shell all along.
+  if (bodyLines) codeLines.push(...bodyLines)
+  endCode()
+  return segments
+}
+
+/**
  * Extensions we can name outright. highlight.js has a filename resolver, but it
  * only knows a few names, and the app needs to cover its own stack.
  */
@@ -226,27 +307,11 @@ function decorateTextNode(node: Text): void {
   node.replaceWith(fragment)
 }
 
-/**
- * Highlight a shell command for a summary row, adding the tokens the bash
- * grammar leaves plain so the row reads as colourfully as a code block.
- *
- * Unlike `highlightLines`, the result is not split per line: a summary is one
- * row of text, and the browser wraps it. Returns null when the command is too
- * long to bother with.
- */
-export function highlightShellSummary(code: string): string | null {
-  const lineCount = code.length ? code.split("\n").length : 0
-  if (lineCount > MAX_LINES) return null
-
-  let html: string
-  try {
-    html = hljs.highlight(code, { language: "bash", ignoreIllegals: true }).value
-  } catch {
-    return null
-  }
-
+/** Highlight a run of shell, then colour the tokens the grammar left plain. */
+function highlightShell(text: string): string {
   const template = document.createElement("template")
-  template.innerHTML = html
+  template.innerHTML = hljs.highlight(text, { language: "bash", ignoreIllegals: true }).value
+
   const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT)
   const textNodes: Text[] = []
   while (walker.nextNode()) textNodes.push(walker.currentNode as Text)
@@ -256,6 +321,34 @@ export function highlightShellSummary(code: string): string | null {
     decorateTextNode(node)
   }
   return template.innerHTML
+}
+
+/** The grammars a tool summary can be read as. */
+export type SummaryLanguage = "bash" | "javascript"
+
+/**
+ * Highlight a tool summary that is code — a shell command or a script — adding
+ * the tokens the bash grammar leaves plain so the row reads as colourfully as a
+ * code block, and leaving the body of a here-document uncoloured: it is prose
+ * handed to a command, not the command itself.
+ *
+ * Unlike `highlightLines`, the result is not split per line: a summary is one
+ * row of text, and the browser wraps it — while keeping the code's own newlines,
+ * so a call that spans lines is not reflowed into one paragraph. Returns null
+ * when the code is too long to bother with.
+ */
+export function highlightCodeSummary(code: string, language: SummaryLanguage): string | null {
+  const lineCount = code.length ? code.split("\n").length : 0
+  if (lineCount > MAX_LINES) return null
+
+  try {
+    if (language !== "bash") return hljs.highlight(code, { language, ignoreIllegals: true }).value
+    return commandSegments(code)
+      .map((segment) => (segment.code ? highlightShell(segment.text) : escapeHtml(segment.text)))
+      .join("\n")
+  } catch {
+    return null
+  }
 }
 
 /** Escape text so it can be handed to `v-html` exactly as it stands. */

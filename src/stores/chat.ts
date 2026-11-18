@@ -225,7 +225,13 @@ function streamBlock(id: string, kind: "text" | "reasoning", ordinal: number, de
 function upsertTool(
   id: string,
   toolID: string,
-  patch: { name?: string; state?: ToolState; inputText?: string; executed?: boolean },
+  patch: {
+    name?: string
+    /** The next state, or how to build it from the one it replaces — for the
+     *  events that carry only part of a tool call. */
+    state?: ToolState | ((previous: ToolState) => ToolState)
+    executed?: boolean
+  },
 ) {
   updateAssistant(id, (message) => {
     const content = message.content.slice()
@@ -236,7 +242,7 @@ function upsertTool(
         type: "tool",
         id: toolID,
         name: patch.name ?? "",
-        state: { status: "streaming", input: patch.inputText ?? "" },
+        state: { status: "streaming", input: "" },
         time: { created: Date.now() },
       })
     }
@@ -245,11 +251,21 @@ function upsertTool(
       ...block,
       name: patch.name ?? block.name,
       executed: patch.executed ?? block.executed,
-      state: patch.state ?? block.state,
+      state: typeof patch.state === "function" ? patch.state(block.state) : (patch.state ?? block.state),
     }
     content[at] = next
     return { ...message, content }
   })
+}
+
+/** The arguments a streamed call's JSON text holds, or {} while they do not parse. */
+function parseToolInput(raw: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
 }
 
 function joinText(content: ToolContent[] | undefined): string {
@@ -828,7 +844,14 @@ export function useChat() {
       case "session.tool.input.ended": {
         if (!isCurrent) return
         const messageID = data.assistantMessageID as string
-        if (messageID) upsertTool(messageID, data.id as string, { inputText: data.text as string })
+        const text = data.text as string | undefined
+        // The whole argument text replaces whatever the deltas assembled, so a
+        // missed delta cannot leave the call with half its arguments.
+        if (messageID && text !== undefined) {
+          upsertTool(messageID, data.id as string, {
+            state: (previous) => (previous.status === "streaming" ? { status: "streaming", input: text } : previous),
+          })
+        }
         break
       }
       case "session.tool.called": {
@@ -865,12 +888,16 @@ export function useChat() {
         const messageID = data.assistantMessageID as string
         if (messageID) {
           upsertTool(messageID, data.id as string, {
-            state: {
+            state: (previous) => ({
               status: "completed",
-              input: (data.input as Record<string, unknown>) ?? {},
+              // The result travels with the event; the arguments do not — those
+              // come with `session.tool.called`, or as the streamed text — so the
+              // input the call was made with is kept rather than blanked, and the
+              // row keeps showing its command until the turn settles.
+              input: previous.status === "streaming" ? parseToolInput(previous.input) : previous.input,
               content: (data.content as ToolContent[]) ?? [],
               metadata: data.metadata as Record<string, unknown>,
-            },
+            }),
             executed: data.executed as boolean | undefined,
           })
         }
@@ -881,13 +908,13 @@ export function useChat() {
         const messageID = data.assistantMessageID as string
         if (messageID) {
           upsertTool(messageID, data.id as string, {
-            state: {
+            state: (previous) => ({
               status: "error",
-              input: (data.input as Record<string, unknown>) ?? {},
+              input: previous.status === "streaming" ? parseToolInput(previous.input) : previous.input,
               error: (data.error as StructuredError) ?? { type: "error", message: "Tool failed" },
               content: (data.content as ToolContent[]) ?? [],
               metadata: data.metadata as Record<string, unknown>,
-            },
+            }),
           })
         }
         break

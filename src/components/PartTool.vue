@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { Check, ChevronRight, CircleAlert, CircleSlash, Terminal } from "lucide-vue-next"
+import { Check, ChevronRight, CircleAlert, CircleSlash } from "lucide-vue-next"
 import type { AssistantToolBlock, ToolFileContent } from "@/api/types"
-import { prettyJson, toolSummary } from "@/utils/format"
+import { prettyJson, partialToolSummary, toolSummary } from "@/utils/format"
 import { toolOutputText } from "@/utils/compose"
 import { isStop } from "@/utils/stop"
 import { isDataUrl } from "@/utils/file"
-import { highlightLines, highlightShellSummary } from "@/utils/highlight"
+import { highlightLines, highlightCodeSummary, type SummaryLanguage } from "@/utils/highlight"
 import { openImage } from "@/stores/lightbox"
 import Spinner from "./Spinner.vue"
 
@@ -22,7 +22,19 @@ const running = computed(() => state.value.status === "running" || state.value.s
  */
 const stopped = computed(() => state.value.status === "error" && isStop(state.value.error))
 const input = computed<Record<string, unknown>>(() => (state.value.status === "streaming" ? {} : state.value.input))
-const summary = computed(() => toolSummary(props.block.name, input.value))
+/**
+ * The summary: the command, path or pattern the call is about.
+ *
+ * The arguments stream in as JSON text rather than as an object, so while they
+ * arrive the summary is read out of that text. That is what makes a running call
+ * readable from its first token instead of showing a bare tool name until the
+ * call is over.
+ */
+const summary = computed(() => {
+  const current = state.value
+  if (current.status === "streaming") return partialToolSummary(props.block.name, current.input)
+  return toolSummary(props.block.name, input.value)
+})
 const inputText = computed(() =>
   state.value.status === "streaming" ? state.value.input : JSON.stringify(state.value.input ?? {}, null, 2),
 )
@@ -59,19 +71,29 @@ function highlightJson(code: string): string | null {
   return lines ? lines.join("\n") : null
 }
 
-/** Tools whose summary is a shell command, and so reads better highlighted. */
-const SHELL_TOOLS = new Set(["shell", "bash"])
+/**
+ * Tools whose summary is code, and the grammar that code reads best as. A shell
+ * command and a script are worth highlighting; a file path or a search pattern
+ * has no tokens to colour and would just pick up noise from a grammar.
+ */
+const SUMMARY_LANGUAGES: Partial<Record<string, SummaryLanguage>> = {
+  shell: "bash",
+  bash: "bash",
+  execute: "javascript",
+}
 
 /**
  * The summary as highlighted HTML, or null to render it as plain text.
  *
- * Only a shell command is worth colouring: a file path or a search pattern has
- * no tokens to highlight, and the bash grammar would merely add noise to it.
+ * Nothing half-written is highlighted: the arguments arrive token by token, and
+ * a here-document has no closing delimiter until the command is complete, so the
+ * grammar would briefly read its body as code.
  */
 const summaryHtml = computed(() => {
   const text = summary.value
-  if (!text || !SHELL_TOOLS.has(props.block.name)) return null
-  return highlightShellSummary(text)
+  const language = SUMMARY_LANGUAGES[props.block.name]
+  if (!text || !language || state.value.status === "streaming") return null
+  return highlightCodeSummary(text, language)
 })
 
 /** Whether a tool block's text parses as JSON. */
@@ -93,16 +115,16 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 <template>
   <div class="tool" :class="stopped ? 'stopped' : state.status">
     <button class="head" @click="open = !open">
-      <!-- The chevron, the terminal and the text are one flowing line: a long
-           argument wraps at the row's own left edge, under the chevron, instead
-           of in a column indented past the icons. -->
+      <!-- The chevron and the text are one flowing line: a long argument wraps
+           at the row's own left edge, under the chevron, instead of in a column
+           indented past it. -->
       <span class="tool-text">
         <ChevronRight :size="14" class="chev" :class="{ open }" />
-        <Terminal :size="14" class="tool-icon" />
         <span class="tool-name">{{ block.name }}</span>
         <!-- A rule, not a space: the name and the summary are different things,
              and a monospace run reads them as one sentence without it. A shell
-             command is highlighted; every other summary stays as it is. -->
+             command or a script is highlighted; every other summary stays as it
+             is. -->
         <span v-if="summary" class="name-sep" aria-hidden="true"></span>
         <span v-if="summary" class="tool-title">
           <template v-if="summaryHtml"><span class="hljs-themed" v-html="summaryHtml" /></template>
@@ -201,11 +223,6 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
 .chev.open {
   transform: rotate(90deg);
 }
-.tool-icon {
-  display: inline-block;
-  vertical-align: middle;
-  margin-right: 4px;
-}
 /* The name and its summary: one text run, so the summary wraps under the name
    instead of being laid out as a second column beside it. */
 .tool-text {
@@ -230,6 +247,13 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
   margin: 0 8px;
   vertical-align: middle;
   background: var(--border-strong);
+}
+/* The summary is the command as it was written: its newlines are part of it, so
+   a call that spans lines — a here-document, say — shows the lines it has
+   instead of being reflowed into one paragraph. Leading indentation survives for
+   the same reason, and a line still wraps when it is wider than the row. */
+.tool-title {
+  white-space: pre-wrap;
 }
 .status {
   flex: none;

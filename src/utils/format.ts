@@ -95,30 +95,105 @@ export function formatCostCompact(value?: number): string {
   return `$${value.toFixed(3)}`
 }
 
+/**
+ * The arguments a tool's summary is read from, most specific first. A tool that
+ * is not listed falls back to the first string argument it has.
+ */
+const SUMMARY_FIELDS: Record<string, readonly string[]> = {
+  shell: ["command"],
+  bash: ["command"],
+  read: ["filePath", "path"],
+  write: ["filePath", "path"],
+  edit: ["filePath", "path"],
+  patch: ["filePath", "path"],
+  apply_patch: ["filePath", "path"],
+  list: ["filePath", "path"],
+  glob: ["pattern", "query"],
+  grep: ["pattern", "query"],
+  webfetch: ["url"],
+  task: ["description", "prompt"],
+  question: ["question", "header"],
+}
+
 /** A short human summary for a tool call, used in tool headers. */
 export function toolSummary(tool: string, input: Record<string, unknown> | undefined): string {
   if (!input) return ""
-  const value = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined)
-  switch (tool) {
-    case "bash":
-      return value("command") ?? ""
-    case "read":
-    case "write":
-    case "edit":
-    case "patch":
-      return value("filePath") ?? value("path") ?? ""
-    case "glob":
-    case "grep":
-      return value("pattern") ?? ""
-    case "webfetch":
-      return value("url") ?? ""
-    case "task":
-      return value("description") ?? ""
-    default: {
-      const first = Object.values(input).find((item) => typeof item === "string")
-      return (first as string) ?? ""
+  const fields = SUMMARY_FIELDS[tool]
+  if (fields) {
+    for (const field of fields) {
+      const value = input[field]
+      if (typeof value === "string") return value
     }
+    return ""
   }
+  const first = Object.values(input).find((item) => typeof item === "string")
+  return (first as string) ?? ""
+}
+
+/** JSON escape sequences, as a string carries them. A lone `\"` is the quote. */
+const JSON_ESCAPES: Record<string, string> = {
+  '"': '"',
+  "\\": "\\",
+  "/": "/",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+}
+
+/**
+ * The text of a JSON string that starts just past its opening quote, decoded as
+ * far as the text has arrived. A cut escape or code point is dropped: showing
+ * half of one is worse than showing the string a character short.
+ */
+function readJsonString(raw: string, start: number): string {
+  let text = ""
+  for (let at = start; at < raw.length; at++) {
+    const char = raw[at]
+    if (char === '"') break
+    if (char !== "\\") {
+      text += char
+      continue
+    }
+    const escape = raw[at + 1]
+    if (escape === undefined) break
+    if (escape === "u") {
+      const hex = raw.slice(at + 2, at + 6)
+      if (hex.length < 4) break
+      text += String.fromCharCode(parseInt(hex, 16))
+      at += 5
+      continue
+    }
+    text += JSON_ESCAPES[escape] ?? escape
+    at++
+  }
+  return text
+}
+
+/** Where the summary's string starts in a tool's JSON, or null if it has not arrived. */
+function summaryMatch(raw: string, fields: readonly string[] | undefined): RegExpExecArray | null {
+  if (!fields) return /"[A-Za-z_][\w.-]*"\s*:\s*"/.exec(raw)
+  for (const field of fields) {
+    const match = new RegExp(`"${field}"\\s*:\\s*"`).exec(raw)
+    if (match) return match
+  }
+  return null
+}
+
+/**
+ * The summary of a tool call whose arguments are still arriving.
+ *
+ * The arguments stream as JSON text, so they do not parse yet, but the summary's
+ * own string is readable as far as it has got — which is what lets a running
+ * call say what it is doing instead of showing a bare tool name. The same
+ * reader covers a call whose arguments never parsed.
+ */
+export function partialToolSummary(tool: string, raw: string): string {
+  if (!raw) return ""
+  const match = summaryMatch(raw, SUMMARY_FIELDS[tool])
+  if (!match) return ""
+  return readJsonString(raw, match.index + match[0].length)
 }
 
 /** Pretty-print a tool output that is a JSON object/array; leave other text as-is. */
