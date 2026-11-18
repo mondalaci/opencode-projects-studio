@@ -9,6 +9,7 @@ import { isStop } from "@/utils/stop"
 import { heldModifier } from "@/stores/shortcuts"
 import { useServer } from "@/stores/server"
 import { useApp } from "@/stores/app"
+import { useChat } from "@/stores/chat"
 import Caret from "./Caret.vue"
 import Markdown from "./Markdown.vue"
 import PartFile from "./PartFile.vue"
@@ -27,16 +28,46 @@ const props = defineProps<{
 /** The model list, for naming the model a message ran on. */
 const { models } = useServer()
 const app = useApp()
+const { messages } = useChat()
 
 const isUser = computed(() => props.message.type === "user")
 const isAssistant = computed(() => props.message.type === "assistant")
 
 const content = computed<AssistantBlock[]>(() => (props.message.type === "assistant" ? props.message.content : []))
 
+/**
+ * A failed turn's reason, when the server recorded one as an idle message.
+ *
+ * A failed turn ends with an idle message that carries the error. It is the
+ * server's own record of a turn that ended with no reply, and the only place the
+ * reason survives a reload — so it is rendered as an error row rather than
+ * skipped like the other idle records. It stays hidden when the turn's own reply
+ * already shows the same error, so a step failure is not printed twice.
+ */
+const turnFailure = computed(() => {
+  const message = props.message
+  if (message.type !== "idle" || message.outcome !== "failed") return null
+  const text = message.error?.message || "The turn failed."
+  const list = messages.value
+  const index = list.findIndex((item) => item.id === message.id)
+  for (let i = index - 1; i >= 0; i--) {
+    const item = list[i]
+    if (item.type === "user") break
+    if (item.type === "assistant" && item.error) {
+      // The reply's own error block already says why this turn failed.
+      if ((item.error.message || "The model returned an error.") === text) return null
+      break
+    }
+  }
+  return text
+})
+
 /** Bookkeeping messages with no user-facing content. */
-const hidden = computed(() =>
-  ["idle", "model-switched", "agent-switched", "location-switched"].includes(props.message.type),
-)
+const hidden = computed(() => {
+  const type = props.message.type
+  if (type === "idle") return turnFailure.value === null
+  return ["model-switched", "agent-switched", "location-switched"].includes(type)
+})
 
 /** Notes that are not part of the conversation flow (switches, idle, shell). */
 const note = computed<string | null>(() => {
@@ -186,6 +217,13 @@ function isCompose(block: AssistantToolBlock): boolean {
       </div>
     </template>
 
+    <div v-else-if="turnFailure" class="message note-row" role="alert">
+      <div class="turn-failure">
+        <span class="turn-failure-label">The turn failed</span>
+        <span class="turn-failure-text">{{ turnFailure }}</span>
+      </div>
+    </div>
+
     <div v-else class="message" :class="isUser ? 'user' : 'assistant'" :data-message-id="message.id">
     <div v-if="!isUser" class="avatar" aria-hidden="true">
       <!-- A robot, drawn here rather than imported: a rounded head with a stub
@@ -272,6 +310,30 @@ function isCompose(block: AssistantToolBlock): boolean {
   font-size: 12px;
   font-family: var(--font-mono);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A failed turn's reason, in the danger tone so it reads as a stop rather than
+   as part of the conversation. */
+.turn-failure {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px auto;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+.turn-failure-label {
+  flex: none;
+  font-weight: 600;
+}
+.turn-failure-text {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 /* A notice long enough to be a document: one line that opens onto the whole

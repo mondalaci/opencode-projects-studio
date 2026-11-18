@@ -332,6 +332,7 @@ export function useChat() {
         client.activeSessions({ directory }).catch(() => null),
       ])
       messages.value = list
+      clearFailedIdleBanner()
       permissions.value = perms
       forms.value = formList
       // The server publishes which sessions are running, and that is the only
@@ -365,6 +366,7 @@ export function useChat() {
       // outright would discard every page but this one.
       messages.value = mergeMessages(messages.value, list)
       streamIndex.clear()
+      clearFailedIdleBanner()
       forms.value = formList
       // Only ever *ends* a turn here. Starting one is announced by
       // `session.execution.started`, and this runs on a debounce, so treating
@@ -671,6 +673,32 @@ export function useChat() {
   }
 
   /**
+   * The assistant message a failed turn was writing, if it wrote one.
+   *
+   * A failure belongs to the turn it interrupted. The last assistant message in
+   * the conversation is not necessarily that message: in a session whose turn
+   * failed before writing anything, the newest reply is from the previous turn,
+   * and hanging the error on it would blame the wrong answer. So the scan starts
+   * after the newest prompt and only looks at what this turn produced. A turn
+   * that wrote nothing leaves nothing to attach to, and the banner carries it.
+   */
+  function failedTurnAssistantID(): string | undefined {
+    let prompt = -1
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].type === "user") {
+        prompt = i
+        break
+      }
+    }
+    for (let i = messages.value.length - 1; i > prompt; i--) {
+      if (messages.value[i].type === "assistant") return messages.value[i].id
+    }
+    const last = messages.value[messages.value.length - 1]
+    if (last?.type === "assistant" && !last.time?.completed) return last.id
+    return undefined
+  }
+
+  /**
    * Record a failure where it happened.
    *
    * A step or turn error belongs on the message it interrupted: it scrolls with
@@ -679,9 +707,26 @@ export function useChat() {
    */
   function attachError(err: StructuredError | undefined, messageID?: string) {
     if (!err) return
-    const target = messageID ?? [...messages.value].reverse().find((item) => item.type === "assistant")?.id
-    if (target) updateAssistant(target, (message) => ({ ...message, error: err }))
-    else error.value = err.message || "The turn failed"
+    const target = messageID ?? failedTurnAssistantID()
+    if (!target) {
+      error.value = err.message || "The turn failed."
+      return
+    }
+    updateAssistant(target, (message) => ({ ...message, error: err }))
+  }
+
+  /**
+   * Drop the banner once the failed turn is in the thread.
+   *
+   * A failed turn ends with an idle message the server records, and the thread
+   * renders it. The banner carried the same failure only while that record was in
+   * flight; keeping both would print the reason twice. A banner from a different
+   * failure — a prompt the server refused outright — is left alone.
+   */
+  function clearFailedIdleBanner() {
+    const newest = messages.value[messages.value.length - 1]
+    if (newest?.type !== "idle" || newest.outcome !== "failed") return
+    if (error.value === (newest.error?.message || "The turn failed.")) error.value = null
   }
 
   function applyEvent(type: string, data: Record<string, unknown> | undefined) {
