@@ -149,9 +149,17 @@ async function scrollToBottom(explicit = false) {
   })
 }
 
+/**
+ * Follow the conversation as it changes.
+ *
+ * Not a deep watcher: every update in the store replaces the array — a streamed
+ * token, a tool's state, a new prompt — so watching the ref is enough, while
+ * `deep` walked every message, every block and every tool's whole output on
+ * every token, which on a long conversation is megabytes per delta.
+ */
 watch(messages, () => {
   if (pinned.value) void scrollToBottom()
-}, { deep: true })
+})
 
 watch(loading, (value) => {
   if (!value) void scrollToBottom()

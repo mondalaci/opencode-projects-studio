@@ -485,6 +485,25 @@ function isCompose(block: AssistantToolBlock): boolean {
 .bubble {
   min-width: 0;
   max-width: 100%;
+  /* The browser's own windowing, and the reason a long conversation opens at
+     once: a message's contents are laid out and painted only while the message
+     is near the viewport, so a thread of thousands no longer lays all of them
+     out to show the last screenful. The rows themselves stay in the document —
+     they are what the scrollbar's marks, the find bar and the scroll position
+     are read from — and only their interiors are skipped.
+     
+     On the bubble rather than on the whole row: `content-visibility` implies
+     paint containment, and a message's own metadata hangs *outside* the row's
+     box, in the gutter, where it would be clipped away.
+     
+     `contain-intrinsic-size` is the size a message is taken to have until it has
+     been laid out once, after which the browser remembers the real one (`auto`).
+     It is the average of a long conversation's rows, measured on the thread this
+     was written for; it only decides how far the scrollbar and its marks are out
+     before the reader has been past them, and the height is what matters — the
+     width is only used for a prompt bubble's shrink-to-fit box. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px 520px;
 }
 /* A bordered block that opens a message is level with the avatar beside it: both
    are boxes, so their top edges meet. Text is left alone — its line box already

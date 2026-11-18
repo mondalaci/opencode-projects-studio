@@ -95,20 +95,27 @@ const thumb = computed(() => {
 
 function measure() {
   const body = props.body
-  const height = body?.scrollHeight ?? 0
-  if (!body || height - body.clientHeight <= 1) {
+  if (!body) {
     scrollable.value = false
     return
   }
+  const height = body.scrollHeight
+  if (height - body.clientHeight <= 1) {
+    scrollable.value = false
+    return
+  }
+  refreshRows()
   const box = body.getBoundingClientRect()
   const scrollTop = body.scrollTop
   // A message's place in the content, read off its rect without caring where
   // the thread is scrolled to, then compared with that scroll to see which way
   // there is to go.
-  const rows = props.ids
-    .map((id) => body.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`))
-    .filter((element): element is HTMLElement => element !== null)
-  offsets.value = rows.map((element) => element.getBoundingClientRect().top - box.top + scrollTop)
+  const offsetsFound: number[] = []
+  for (const id of props.ids) {
+    const element = rowFor(id)
+    if (element) offsetsFound.push(element.getBoundingClientRect().top - box.top + scrollTop)
+  }
+  offsets.value = offsetsFound
   total.value = height
 
   // The two directions are not symmetric about the top edge. Going up, the edge
@@ -133,6 +140,39 @@ function measure() {
   scrollable.value = true
 }
 
+/**
+ * The row a prompt id marks, found without walking the thread.
+ *
+ * A `querySelector` per prompt walked every node in the conversation — hundreds
+ * of thousands of them, on a long one — and it ran on every scroll frame. The
+ * rows are collected once from a single walk and kept until the conversation
+ * changes; an id the map does not hold (a row replaced without its id changing)
+ * is looked up the old way and remembered.
+ */
+let rows = new Map<string, HTMLElement>()
+let rowsKey = ""
+
+function refreshRows() {
+  const content = props.content
+  const key = props.ids.join("\u0000")
+  if (content && key === rowsKey) return
+  rowsKey = key
+  rows = new Map()
+  if (!content) return
+  for (const element of content.querySelectorAll<HTMLElement>("[data-message-id]")) {
+    const id = element.dataset.messageId
+    if (id) rows.set(id, element)
+  }
+}
+
+function rowFor(id: string): HTMLElement | undefined {
+  const cached = rows.get(id)
+  if (cached?.isConnected) return cached
+  const element = props.body?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`) ?? undefined
+  if (element) rows.set(id, element)
+  return element
+}
+
 /** Where a step to `offset` comes to rest: the top edge, as far as the thread
  *  can scroll. */
 function landing(offset: number, maxScroll: number): number {
@@ -140,8 +180,9 @@ function landing(offset: number, maxScroll: number): number {
 }
 
 /** Step to a prompt, landing it just inside the top edge. The measure that
- *  follows is immediate rather than waiting for the scroll event, so a second
- *  click steps on from where the first one landed. The scroll and the button
+ *  follows is scheduled rather than left to the scroll event, so a second click
+ *  steps on from where the first one landed even when the scroll event never
+ *  fires (a step that was already at its landing). The scroll and the button
  *  states are computed from the same landing, so a click that cannot move
  *  cannot leave the button looking as though it could. */
 function jump(offset: number | null) {
@@ -149,7 +190,7 @@ function jump(offset: number | null) {
   if (!body || offset === null) return
   const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight)
   body.scrollTop = landing(offset, maxScroll)
-  measure()
+  schedule()
 }
 
 let observer: ResizeObserver | null = null
@@ -157,16 +198,31 @@ let detach: (() => void) | null = null
 let frame = 0
 
 /**
- * Scrolling moves nothing on its own — a message's place in the content is
- * measured from the content, not from the viewport — but it is what decides
- * which way the buttons can step, so the state is refreshed as the reader moves.
+ * A measure runs at most once per frame.
+ *
+ * Measuring reads layout — the thread's scroll height and every prompt's rect —
+ * and a read after the DOM has changed forces the browser to lay the whole
+ * conversation out on the spot. Called straight from the watchers below, which
+ * fire inside Vue's flush, that laid a long thread out several times per update;
+ * on the conversation this was written for the reflow alone cost a second of the
+ * open. Deferring to the frame coalesces those passes into one, and lets the
+ * layout happen where the browser was going to do it anyway.
  */
-function onScroll() {
+function schedule() {
   if (frame) return
   frame = requestAnimationFrame(() => {
     frame = 0
     measure()
   })
+}
+
+/**
+ * Scrolling moves nothing on its own — a message's place in the content is
+ * measured from the content, not from the viewport — but it is what decides
+ * which way the buttons can step, so the state is refreshed as the reader moves.
+ */
+function onScroll() {
+  schedule()
 }
 
 watch(
@@ -178,9 +234,8 @@ watch(
       scrollable.value = false
       return
     }
-    const onResize = () => measure()
     body.addEventListener("scroll", onScroll, { passive: true })
-    observer = new ResizeObserver(onResize)
+    observer = new ResizeObserver(schedule)
     observer.observe(body)
     // The conversation's own height, as well as the frame's: a reply streaming
     // in while the reader is scrolled up — the case where the thread does not
@@ -195,7 +250,7 @@ watch(
       if (frame) cancelAnimationFrame(frame)
       frame = 0
     }
-    measure()
+    schedule()
   },
   // Post-flush, so the messages are in the DOM before they are measured; the
   // first call has no body yet and no-ops, then the watcher fires once it
@@ -203,9 +258,20 @@ watch(
   { immediate: true, flush: "post" },
 )
 
+/** The prompt list as last measured, so an unchanged one is not measured again. */
+let idsKey: string | null = null
+
 watch(
   () => props.ids,
-  () => measure(),
+  (ids) => {
+    // The list is rebuilt on every change to the conversation — a streamed
+    // token replaces the array — so a new array is not a new set of marks. Only
+    // a change to the ids themselves moves a tick.
+    const key = ids.join("\u0000")
+    if (key === idsKey) return
+    idsKey = key
+    schedule()
+  },
   { flush: "post" },
 )
 

@@ -150,7 +150,12 @@ const outputHtml = computed(() => (isJson(outputText.value) ? highlightJson(outp
         @click="openImage(image.src, image.label)"
       />
     </div>
-    <div v-show="open" class="body">
+    <!-- `v-if`, not `v-show`: a collapsed body is not built at all. The input and
+         the output are JSON-stringified, pretty-printed and syntax-highlighted
+         when they are rendered, and a long conversation is hundreds of tool
+         calls — doing that for every one of them at mount is what made opening
+         one take seconds. -->
+    <div v-if="open" class="body">
       <div class="section">
         <div class="label">Input</div>
         <pre v-if="inputHtml" v-html="inputHtml"></pre>
