@@ -8,6 +8,7 @@ import ModelSelector from "./ModelSelector.vue"
 import VariantSelector from "./VariantSelector.vue"
 import { useApp } from "@/stores/app"
 import { addFile, attachments, clearAttachments, composerFocusRequest, draft, removeAttachment } from "@/stores/draft"
+import { openImage } from "@/stores/lightbox"
 import { useServer } from "@/stores/server"
 import { useMcp } from "@/stores/mcp"
 import { requestOpen } from "@/stores/shortcuts"
@@ -416,7 +417,18 @@ function onKeydown(event: KeyboardEvent) {
     >
       <div v-if="attachments.length" class="attachments">
         <div v-for="item in attachments" :key="item.id" class="attachment" :class="{ file: !isImage(item.mime) }">
-          <img v-if="isImage(item.mime)" :src="item.url" :alt="item.filename" />
+          <!-- A picture is worth enlarging before it is sent, to check it is the
+               one meant — so the thumbnail opens the same viewer the thread
+               uses. Only the picture is clickable; the remove button over it is
+               not part of it. -->
+          <img
+            v-if="isImage(item.mime)"
+            :src="item.url"
+            :alt="item.filename"
+            class="zoomable"
+            :title="`${item.filename} — click to enlarge`"
+            @click="openImage(item.url, item.filename)"
+          />
           <template v-else>
             <FileText :size="18" />
             <span class="file-name" :title="item.filename">{{ item.filename }}</span>
@@ -547,6 +559,10 @@ function onKeydown(event: KeyboardEvent) {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* A thumbnail is a picture as much as an attachment, so it opens full size. */
+.attachment img.zoomable {
+  cursor: zoom-in;
 }
 .attachment .remove {
   position: absolute;
