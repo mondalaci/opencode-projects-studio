@@ -245,7 +245,7 @@ export function useSessionState() {
         } else {
           // This window watched it finish, so its row shows no green dot -
           // publish that, or the panel would light one up.
-          void publishFinish(sessionID)
+          void publishViewed(sessionID)
         }
         break
       }
@@ -540,23 +540,19 @@ export function useSessionState() {
   }
 
   function markSeen(sessionID: string | null | undefined) {
-    if (!sessionID || !unread.value.has(sessionID)) return
-    const next = new Set(unread.value)
-    next.delete(sessionID)
-    unread.value = next
-    persistUnread()
-    void publishViewed(sessionID)
-  }
-
-  /** The idle stamp of a conversation, from whatever this app has cached. */
-  function idleOf(sessionID: string): number | undefined {
-    if (sessions.currentID.value === sessionID) {
-      const current = sessions.current.value
-      if (current?.time?.idle) return current.time.idle
+    if (!sessionID) return
+    if (unread.value.has(sessionID)) {
+      const next = new Set(unread.value)
+      next.delete(sessionID)
+      unread.value = next
+      persistUnread()
     }
-    const cached = projects.findSession(sessionID)
-    if (cached?.time?.idle) return cached.time.idle
-    return undefined
+    // Opening a conversation is the user saying they have seen it, whether or
+    // not *this* window ever flagged it. The panel's dot reads the server's
+    // marker, so a finish this window was closed for - never marked unread here -
+    // still has to be told, or the panel keeps its green dot for a conversation
+    // the studio already shows grey.
+    void publishViewed(sessionID)
   }
 
   /**
@@ -565,22 +561,18 @@ export function useSessionState() {
    * The studio's own unread set is what tells a finish that was watched from one
    * that was not, but it is private to this window. Posting the idle transition
    * to `time.viewed` is what lets the panel clear the same conversation's green
-   * dot, so the two stay in step. Best effort: the app does not need it to work.
+   * dot, so the two stay in step.
+   *
+   * The stamp has to be the conversation's *current* idle, read fresh. Nothing in
+   * this app advances a cached record's `time` - not the session list, not the
+   * event stream, whose `session.idle` frame carries only an id - so a cached
+   * stamp is whatever the load that filled it last saw. Posting one marks an
+   * older finish seen and leaves the panel's dot lit for the newer one, and the
+   * server only ever moves `viewed` forward, so it cannot repair that by itself.
+   *
+   * Best effort: the app does not need it to work.
    */
   async function publishViewed(sessionID: string) {
-    const client = activeClient
-    if (!client) return
-    const idle = idleOf(sessionID)
-    if (!idle) return
-    try {
-      await client.viewSession(sessionID, idle)
-    } catch {
-      /* the marker is best effort */
-    }
-  }
-
-  /** The same, for a finish this window watched happen. */
-  async function publishFinish(sessionID: string) {
     const client = activeClient
     if (!client) return
     try {
