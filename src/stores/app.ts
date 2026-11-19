@@ -234,6 +234,31 @@ export function useApp() {
   }
 
   /**
+   * Move to the next (`+1`, older) or previous (`-1`, newer) conversation in the
+   * open project, wrapping around at either end. The order is the sidebar's —
+   * newest first — so `-1` walks up toward the newest conversation and `+1`
+   * walks down toward the oldest. It behaves like clicking a conversation row:
+   * the conversation opens and the composer takes focus.
+   */
+  async function cycleSession(delta: 1 | -1) {
+    const list = sessions.sorted.value
+    if (!list.length) return
+    const index = list.findIndex((item) => item.id === sessions.currentID.value)
+    // With nothing open (or a stale id) the first press opens the newest, so a
+    // press never lands back where it started.
+    if (index === -1) {
+      await selectSession(list[0].id)
+      requestComposerFocus()
+      return
+    }
+    const target = list[(index + delta + list.length) % list.length]
+    // A single conversation wraps onto itself; reopening it would only reset focus.
+    if (target.id === sessions.currentID.value) return
+    await selectSession(target.id)
+    requestComposerFocus()
+  }
+
+  /**
    * Move the app off a project it is about to stop showing.
    *
    * Any request scoped to a directory makes the server resolve — and so create —
@@ -487,6 +512,7 @@ export function useApp() {
     switchProject,
     openProject,
     cycleProject,
+    cycleSession,
     hideProject,
     unhideProject,
     deleteProject,

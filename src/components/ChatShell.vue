@@ -32,7 +32,7 @@ const tray = useTray()
 const { current, currentID } = app.sessions
 const { error, messages, isBusy, awaitingUser, contentBelow, requestScrollToBottom } = app.chat
 const { models, selectedModelInfo } = app.server
-const { newChat, cycleProject } = app
+const { newChat, cycleProject, cycleSession } = app
 
 /** The change row whose diff is open; while set, the diff replaces the chat. */
 const activeDiff = git.selection
@@ -262,6 +262,16 @@ function onKeyDown(event: KeyboardEvent) {
     if (!event.defaultPrevented && (event.code === "PageDown" || event.code === "PageUp")) {
       event.preventDefault()
       void cycleProject(event.code === "PageDown" ? 1 : -1)
+      return
+    }
+    // Ctrl+ArrowUp / Ctrl+ArrowDown walk the open project's conversations in the
+    // sidebar's newest-first order: up toward the newer ones, down toward the
+    // older. Alt+arrow is the prompt-stepping pair, so the two never collide.
+    // Once more a closer handler — the composer's slash menu, a sidebar filter,
+    // the focused project list — may have claimed the arrows.
+    if (!event.defaultPrevented && (event.code === "ArrowUp" || event.code === "ArrowDown")) {
+      event.preventDefault()
+      void cycleSession(event.code === "ArrowDown" ? 1 : -1)
       return
     }
     if (event.code === "KeyR") {

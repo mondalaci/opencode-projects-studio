@@ -414,14 +414,17 @@ opened, which is what refetched the session.
 ## Keyboard shortcuts
 
 Hold `Alt` or `Ctrl` to reveal the key badges on the controls they trigger. The
-two are separate layers — `Alt` carries the actions, `Ctrl` the two filters — and
-each badge names its own modifier, so a letter never appears next to the wrong one.
+two are separate layers — `Alt` carries the actions, `Ctrl` the filters and the
+two walk-the-list pairs — and each badge names its own modifier, so a letter
+never appears next to the wrong one.
 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl`+`F` | Find in the open conversation (browser-style find bar) |
 | `Ctrl`+`R` | Filter the projects sidebar in place |
 | `Ctrl`+`P` | Filter the changed files in the source-control panel in place |
+| `Ctrl`+`↑` / `Ctrl`+`↓` | Switch to the previous / next conversation in the open project |
+| `Ctrl`+`PageUp` / `Ctrl`+`PageDown` | Switch to the previous / next project |
 | `Alt`+`P` / `Alt`+`S` | Focus the projects list (arrow keys + `Enter`) |
 | `Alt`+`L` | Expand or collapse the current project's conversations |
 | `Alt`+`N` | New conversation |
@@ -442,6 +445,12 @@ in it, painting the active one in the solid accent colour. `Enter` and `Shift`+`
 walk forward and back — the thread scrolls smoothly to centre each one — and `Esc`
 closes the bar. Unlike `Alt`+`F`, which searches across conversations, this searches
 only the conversation on screen — the same way a browser's find works on a page.
+
+`Ctrl`+`↑` and `Ctrl`+`↓` walk the open project's conversations in the order the
+sidebar lists them, newest first, so `↑` moves toward the newer conversations and
+`↓` toward the older, wrapping at either end. It is the conversation-level twin of
+`Ctrl`+`PageUp` / `Ctrl`+`PageDown`, which walk the projects; the `Alt`+arrow pair
+steps through prompts within the conversation instead.
 
 ## Reading a diff
 
