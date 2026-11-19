@@ -15,8 +15,9 @@ function formatStamp(timestamp: number, withTime: boolean): string {
   const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
   if (new Date(timestamp).getFullYear() !== new Date().getFullYear()) options.year = "numeric"
   if (withTime) {
-    options.hour = "numeric"
+    options.hour = "2-digit"
     options.minute = "2-digit"
+    options.hour12 = false
   }
   return new Date(timestamp).toLocaleString(undefined, options)
 }
