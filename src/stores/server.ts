@@ -155,37 +155,77 @@ function parseModelString(value: ServerConfig["model"]): ModelRef | null {
   return { providerID, id }
 }
 
+/** Attach the remembered variant, when the model still offers it. */
+function withVariant(ref_: ModelRef): ModelRef {
+  const info = models.value.find((item) => item.providerID === ref_.providerID && item.id === ref_.id)
+  if (ref_.variant && info?.variants?.some((v) => v.id === ref_.variant)) return ref_
+  const { variant: _drop, ...rest } = ref_
+  return rest
+}
+
+/**
+ * Whether a model reference is still in the server's catalogue.
+ *
+ * A conversation remembers the model it ran on, but a provider can be disabled
+ * or a model withdrawn, and one that is gone cannot run. The catalogue is only
+ * trusted once it has loaded — an empty list means "not asked yet", not "nothing
+ * available" — so a reference is kept until there is something to judge it by.
+ */
+function isModelAvailable(ref_: ModelRef | null | undefined): boolean {
+  if (!ref_) return false
+  if (!models.value.length) return true
+  const info = models.value.find(
+    (item) => item.providerID === ref_.providerID && (item.id === ref_.id || item.modelID === ref_.id),
+  )
+  if (!info || info.enabled === false) return false
+  const provider = providers.value.find((item) => item.id === ref_.providerID)
+  // A missing provider record means the catalogue is still arriving; trust the model.
+  return !provider || providerConnected(provider)
+}
+
+/**
+ * Resolve the same default the server would use when a prompt omits a model:
+ * saved pref → agent model → config.model → the first enabled model whose
+ * provider is available.
+ */
+function resolveDefaultModel(): ModelRef | null {
+  const defaults = prefs.value[origin.value ?? ""] ?? {}
+  // The remembered choice wins, but only while the server still offers it: a
+  // model withdrawn from a provider must not strand every new conversation.
+  if (defaults.model && isModelAvailable(defaults.model)) return withVariant(defaults.model)
+  const agentModel = selectedAgentInfo.value?.model
+  if (agentModel) return withVariant(agentModel)
+  const cfgModel = parseModelString(config.value?.model)
+  if (cfgModel) return withVariant(cfgModel)
+  const available = new Set(providerGroups.value.filter((group) => group.connected).map((group) => group.providerID))
+  const first = models.value.find((model) => available.has(model.providerID) && model.enabled !== false)
+  if (first) return { providerID: first.providerID, id: first.id }
+  return null
+}
+
 export function useServer() {
+  /**
+   * The model a brand-new conversation starts on: the last one the user picked
+   * here, or the server's own default while nothing has been chosen yet.
+   */
+  const defaultModel = computed<ModelRef | null>(() => resolveDefaultModel())
+
   function applyDefaults() {
     const defaults = prefs.value[origin.value ?? ""] ?? {}
     selectedModel.value = resolveDefaultModel()
     selectedImageModel.value = defaults.imageModel ?? null
   }
 
-  /** Attach the remembered variant (if it is valid for the model). */
-  function withVariant(ref_: ModelRef): ModelRef {
-    const info = models.value.find((item) => item.providerID === ref_.providerID && item.id === ref_.id)
-    if (ref_.variant && info?.variants?.some((v) => v.id === ref_.variant)) return ref_
-    const { variant: _drop, ...rest } = ref_
-    return rest
-  }
-
   /**
-   * Resolve the same default the server would use when a prompt omits a model:
-   * saved pref → agent model → config.model → the first enabled model whose
-   * provider is available.
+   * Point the picker at the conversation being opened.
+   *
+   * A conversation runs on the model it was started on, so that is what the
+   * picker shows — a choice made for some other conversation is not forced on
+   * it. Only when that model is no longer offered does the conversation fall
+   * back to the current default, which is the last model picked anywhere.
    */
-  function resolveDefaultModel(): ModelRef | null {
-    const defaults = prefs.value[origin.value ?? ""] ?? {}
-    if (defaults.model) return withVariant(defaults.model)
-    const agentModel = selectedAgentInfo.value?.model
-    if (agentModel) return withVariant(agentModel)
-    const cfgModel = parseModelString(config.value?.model)
-    if (cfgModel) return withVariant(cfgModel)
-    const available = new Set(providerGroups.value.filter((group) => group.connected).map((group) => group.providerID))
-    const first = models.value.find((model) => available.has(model.providerID) && model.enabled !== false)
-    if (first) return { providerID: first.providerID, id: first.id }
-    return null
+  function applySessionModel(model: ModelRef | null | undefined) {
+    selectedModel.value = isModelAvailable(model) ? withVariant(model as ModelRef) : resolveDefaultModel()
   }
 
   /**
@@ -391,6 +431,7 @@ export function useServer() {
     selectedModelInfo,
     selectedModelVariants,
     selectedVariant,
+    defaultModel,
     selectedImageModel,
     imageModels,
     directory,
@@ -399,6 +440,7 @@ export function useServer() {
     savedDirectory,
     clearSavedDirectory,
     applySavedPrefs,
+    applySessionModel,
     reset,
     removeProject,
     clearProject,

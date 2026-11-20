@@ -22,10 +22,11 @@ import {
 } from "reka-ui"
 import { Brain, Check, ChevronDown, Search } from "lucide-vue-next"
 import type { ModelCost, ModelCostTier, ModelInfo } from "@/api/types"
-import { useServer } from "@/stores/server"
+import { useApp } from "@/stores/app"
 import { openRequests } from "@/stores/shortcuts"
 
-const { providerGroups, models, selectedModel, setModel } = useServer()
+const app = useApp()
+const { providerGroups, models, selectedModel } = app.server
 
 /**
  * Inside a control group the surrounding pill supplies the border, so a segment
@@ -55,7 +56,7 @@ const selectedKey = computed<string>({
   set: (key) => {
     const parsed = parseKey(key)
     if (!parsed) return
-    setModel({ providerID: parsed.providerID, id: parsed.modelID })
+    void app.setModel({ providerID: parsed.providerID, id: parsed.modelID })
     open.value = false
   },
 })

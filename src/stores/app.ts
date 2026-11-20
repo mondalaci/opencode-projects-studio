@@ -1,7 +1,7 @@
 import type { Credentials } from "@/api/client"
 import { desktopBridge } from "@/api/desktop"
 import type { InstanceInfo } from "@/api/discovery"
-import { isRootDirectory, sessionDirectory, type AssistantMessage } from "@/api/types"
+import { isRootDirectory, sessionDirectory, type AssistantMessage, type ModelRef } from "@/api/types"
 import { useChat } from "./chat"
 import { useConnection } from "./connection"
 import { draft, requestComposerFocus } from "./draft"
@@ -118,6 +118,10 @@ export function useApp() {
       const directory = sessionDirectory(info)
       if (directory) projects.setLatest(directory, info)
     }
+    // The conversation brings its own model to the picker: a choice made for
+    // another conversation is not forced on this one. A model the server no
+    // longer offers falls back to the remembered default.
+    server.applySessionModel(info?.model)
     // After the info is in hand: publishing the view needs the conversation's
     // idle stamp, which only the fetched record carries.
     sessionState.markSeen(sessionID)
@@ -190,6 +194,9 @@ export function useApp() {
     fileViewer.close()
     server.setDirectory(directory)
     await server.load(client, connection.connected.value?.origin ?? "", directory)
+    // Nothing of this project's is open yet, so the picker falls back to the
+    // remembered default; opening one of its conversations seeds its own model.
+    server.applySessionModel(null)
     await loadScoped(client)
     // The opened project's block is discovered here rather than by sweeping
     // every project at connect, which would boot every project's MCP fleet.
@@ -359,7 +366,7 @@ export function useApp() {
     if (projects.isArchived(server.directory.value)) return null
     const session = await sessions.create(
       client,
-      { agent: server.agent, model: server.selectedModel.value ?? undefined },
+      { agent: server.agent, model: server.defaultModel.value ?? undefined },
       server.directory.value,
     )
     if (server.directory.value) {
@@ -462,6 +469,42 @@ export function useApp() {
     await chat.compact(client, sessionID, server.directory.value)
   }
 
+  /**
+   * Write the picker's current model onto the open conversation, if there is one.
+   *
+   * The server records a conversation's model on the conversation, so a choice
+   * made while it is open belongs to it and survives switching away and back.
+   * It is best effort: the next prompt sends the same model again anyway.
+   */
+  async function pushSessionModel() {
+    const client = connection.client.value
+    const sessionID = sessions.currentID.value
+    const model = server.selectedModel.value
+    if (!client || !sessionID || !model) return
+    await client.setModel(sessionID, model, { directory: server.directory.value }).catch(() => {
+      /* the next prompt carries it */
+    })
+  }
+
+  /**
+   * Choose the model for the open conversation, and remember it as the default
+   * for the next one.
+   *
+   * Selecting a model never reaches a conversation that is not open — each
+   * brings its own model when it is — so an existing conversation keeps the
+   * model it is on.
+   */
+  async function setModel(model: ModelRef) {
+    server.setModel(model)
+    await pushSessionModel()
+  }
+
+  /** The same, for the effort (variant) of the model the conversation is on. */
+  async function setVariant(variant: string) {
+    server.setVariant(variant)
+    await pushSessionModel()
+  }
+
   /** Permanently delete a conversation. */
   async function deleteSession(sessionID: string, directory?: string) {
     const client = connection.client.value
@@ -469,6 +512,9 @@ export function useApp() {
     const target = directory ?? server.directory.value
     await client.deleteSession(sessionID, { directory: target })
     sessions.forget(sessionID)
+    // Deleting the open conversation leaves no model to show, so the picker
+    // falls back to the remembered default for the next one.
+    if (!sessions.currentID.value) server.applySessionModel(null)
     projects.forgetChat(sessionID)
     if (target) await projects.refreshOne(client, target)
     return true
@@ -523,6 +569,8 @@ export function useApp() {
     sendMessage,
     runCommand,
     compact,
+    setModel,
+    setVariant,
     abort,
     continueReply,
     deleteSession,

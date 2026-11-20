@@ -14,10 +14,11 @@ import {
   ComboboxViewport,
 } from "reka-ui"
 import { Check, ChevronDown, Gauge } from "lucide-vue-next"
-import { useServer } from "@/stores/server"
+import { useApp } from "@/stores/app"
 import { openRequests } from "@/stores/shortcuts"
 
-const { selectedModelVariants, selectedVariant, setVariant } = useServer()
+const app = useApp()
+const { selectedModelVariants, selectedVariant } = app.server
 
 /** Inside a control group the surrounding pill supplies the border; this is the
  *  closing end of it. */
@@ -35,7 +36,7 @@ const selectedKey = computed<string>({
   get: () => selectedVariant.value ?? "",
   set: (value) => {
     if (!value) return
-    setVariant(value)
+    void app.setVariant(value)
     open.value = false
   },
 })
