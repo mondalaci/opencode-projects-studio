@@ -4,6 +4,7 @@ import { marked } from "marked"
 import DOMPurify from "dompurify"
 import { openImage } from "@/stores/lightbox"
 import hljs from "highlight.js/lib/common"
+import { MESSAGE_ID_HEADER, messageIdLink } from "@/utils/linkify"
 import PronunciationBlock from "./PronunciationBlock.vue"
 import { parsePronunciation } from "@/utils/pronunciation"
 
@@ -24,6 +25,40 @@ function onImageClick(event: MouseEvent) {
 const root = ref<HTMLElement | null>(null)
 
 marked.setOptions({ gfm: true, breaks: true })
+
+/**
+ * A Message-ID header in a reply, linked.
+ *
+ * It is not a URL, so GFM leaves it as the words it is written with — and a
+ * reply is the one place the plain-text `linkify` never reaches. Marked is where
+ * the link belongs, because it is made while the markdown is tokenized: a header
+ * inside a code span or a fenced block stays code, exactly as a URL there does.
+ * `messageIdLink` builds the same link the prose paths get, out of the same
+ * pattern, and `HEADER_AT` is that pattern asked about one position only, which
+ * is all a tokenizer is ever handed.
+ */
+const HEADER_AT = new RegExp(`^${MESSAGE_ID_HEADER.source}`, "i")
+
+marked.use({
+  extensions: [
+    {
+      name: "messageId",
+      level: "inline",
+      start(src) {
+        const at = src.search(MESSAGE_ID_HEADER)
+        return at < 0 ? undefined : at
+      },
+      tokenizer(src) {
+        const match = HEADER_AT.exec(src)
+        if (!match) return undefined
+        return { type: "messageId", raw: match[0], text: match[0] }
+      },
+      renderer(token) {
+        return messageIdLink(token.text)
+      },
+    },
+  ],
+})
 
 const html = computed(() => {
   const raw = marked.parse(props.text ?? "", { async: false }) as string
