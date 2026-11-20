@@ -5,6 +5,17 @@ import type { AssistantReasoningBlock } from "@/api/types"
 const props = defineProps<{ block: AssistantReasoningBlock }>()
 const streaming = computed(() => !props.block.time?.completed)
 
+/**
+ * The reasoning as it is read.
+ *
+ * A streamed block leads and trails with blank lines — the paragraph breaks the
+ * model writes — and in a pre-wrapped body those are line boxes like any other:
+ * they hold the box open past the last word, with the border hanging over the gap
+ * beside them. The box is a window onto the reasoning, so it should end with it,
+ * and the whitespace at its two ends goes.
+ */
+const text = computed(() => props.block.text.trim())
+
 const body = ref<HTMLElement | null>(null)
 
 /**
@@ -30,7 +41,7 @@ watch(
 
 <template>
   <div class="reasoning">
-    <div ref="body" class="body">{{ block.text }}</div>
+    <div ref="body" class="body">{{ text }}</div>
   </div>
 </template>
 
