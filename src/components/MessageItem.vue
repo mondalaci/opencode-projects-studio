@@ -5,6 +5,7 @@ import type { AssistantBlock, AssistantReasoningBlock, AssistantToolBlock, Sessi
 import { formatCost, formatDateTime, formatTokens } from "@/utils/format"
 import { endedAtOutputLimit } from "@/utils/truncation"
 import { composedMessage } from "@/utils/compose"
+import { linkify } from "@/utils/linkify"
 import { isStop } from "@/utils/stop"
 import { heldModifier } from "@/stores/shortcuts"
 import { useServer } from "@/stores/server"
@@ -32,6 +33,16 @@ const { messages } = useChat()
 
 const isUser = computed(() => props.message.type === "user")
 const isAssistant = computed(() => props.message.type === "assistant")
+
+/**
+ * What the reader wrote, as HTML.
+ *
+ * A prompt is quoted rather than interpreted: it is drawn verbatim, not rendered
+ * as markdown, so the words stay the reader's own. The one thing done to it is
+ * the one thing a reader expects of a URL in it — a link. `linkify` escapes
+ * everything it is handed, so the text is still theirs and cannot become markup.
+ */
+const userHtml = computed(() => (props.message.type === "user" && props.message.text ? linkify(props.message.text) : ""))
 
 /**
  * The assistant's blocks, as the thread draws them.
@@ -298,7 +309,7 @@ function isCompose(block: AssistantToolBlock): boolean {
       </div>
       <div class="bubble" :class="isUser ? 'user-bubble' : 'assistant-bubble'">
         <template v-if="isUser">
-          <p v-if="message.type === 'user' && message.text" class="user-text">{{ message.text }}</p>
+          <p v-if="userHtml" class="user-text" v-html="userHtml"></p>
           <PartFile
             v-for="(file, index) in (message.type === 'user' ? message.files : undefined) ?? []"
             :key="index"

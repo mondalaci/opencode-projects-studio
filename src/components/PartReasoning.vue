@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue"
 import type { AssistantReasoningBlock } from "@/api/types"
+import { linkify } from "@/utils/linkify"
 
 const props = defineProps<{ block: AssistantReasoningBlock }>()
 const streaming = computed(() => !props.block.time?.completed)
@@ -15,6 +16,13 @@ const streaming = computed(() => !props.block.time?.completed)
  * and the whitespace at its two ends goes.
  */
 const text = computed(() => props.block.text.trim())
+
+/**
+ * The reasoning as HTML, for the URLs in it: the window around it is plain text,
+ * so a link the model leaves here would otherwise be unclickable like any other
+ * prose the markdown renderer does not reach. `linkify` escapes the rest.
+ */
+const html = computed(() => linkify(text.value))
 
 const body = ref<HTMLElement | null>(null)
 
@@ -41,7 +49,7 @@ watch(
 
 <template>
   <div class="reasoning">
-    <div ref="body" class="body">{{ text }}</div>
+    <div ref="body" class="body" v-html="html"></div>
   </div>
 </template>
 

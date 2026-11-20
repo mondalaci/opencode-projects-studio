@@ -201,6 +201,26 @@ a {
   color: inherit;
 }
 
+/*
+ * A link inside a message — a reply's markdown, a prompt quoted back, or a line
+ * of reasoning — has to read as a link. The reset above inherits the text colour
+ * so the app's own anchors stay quiet, and a URL in a sentence was left looking
+ * exactly like the words around it.
+ */
+.markdown a,
+.user-text a,
+.reasoning a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+.markdown a:hover,
+.user-text a:hover,
+.reasoning a:hover {
+  text-decoration-color: currentColor;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
