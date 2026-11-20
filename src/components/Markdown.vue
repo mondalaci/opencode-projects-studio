@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, createApp, onBeforeUnmount, onMounted, ref, watch, type App as VueApp } from "vue"
-import { marked } from "marked"
+import { marked, type TokenizerAndRendererExtension } from "marked"
 import DOMPurify from "dompurify"
 import { openImage } from "@/stores/lightbox"
 import hljs from "highlight.js/lib/common"
-import { MESSAGE_ID_HEADER, messageIdLink } from "@/utils/linkify"
+import { MESSAGE_ID_HEADER, SESSION_ID, messageIdLink, sessionLink } from "@/utils/linkify"
 import PronunciationBlock from "./PronunciationBlock.vue"
 import { parsePronunciation } from "@/utils/pronunciation"
 
@@ -27,36 +27,46 @@ const root = ref<HTMLElement | null>(null)
 marked.setOptions({ gfm: true, breaks: true })
 
 /**
- * A Message-ID header in a reply, linked.
+ * An identifier in a reply, linked, as a marked inline extension.
  *
- * It is not a URL, so GFM leaves it as the words it is written with — and a
- * reply is the one place the plain-text `linkify` never reaches. Marked is where
- * the link belongs, because it is made while the markdown is tokenized: a header
- * inside a code span or a fenced block stays code, exactly as a URL there does.
- * `messageIdLink` builds the same link the prose paths get, out of the same
- * pattern, and `HEADER_AT` is that pattern asked about one position only, which
- * is all a tokenizer is ever handed.
+ * GFM links a URL and leaves everything else as the words it is written with,
+ * and a reply is the one place the plain-text `linkify` never reaches. Marked is
+ * where the rest of them belong, because the link is made while the markdown is
+ * tokenized: an identifier inside a code span or a fenced block stays code,
+ * exactly as a URL there does.
+ *
+ * `pattern` is the same one `linkify` matches, asked about one position at a
+ * time, which is all a tokenizer is ever handed; `start` is what keeps the scan
+ * from walking a paragraph character by character to find it.
  */
-const HEADER_AT = new RegExp(`^${MESSAGE_ID_HEADER.source}`, "i")
+function linkExtension(
+  name: string,
+  pattern: RegExp,
+  link: (match: string) => string,
+): TokenizerAndRendererExtension {
+  const at = new RegExp(`^${pattern.source}`, pattern.flags.replace("g", ""))
+  return {
+    name,
+    level: "inline",
+    start(src) {
+      const index = src.search(pattern)
+      return index < 0 ? undefined : index
+    },
+    tokenizer(src) {
+      const match = at.exec(src)
+      if (!match) return undefined
+      return { type: name, raw: match[0], text: match[0] }
+    },
+    renderer(token) {
+      return link(token.text)
+    },
+  }
+}
 
 marked.use({
   extensions: [
-    {
-      name: "messageId",
-      level: "inline",
-      start(src) {
-        const at = src.search(MESSAGE_ID_HEADER)
-        return at < 0 ? undefined : at
-      },
-      tokenizer(src) {
-        const match = HEADER_AT.exec(src)
-        if (!match) return undefined
-        return { type: "messageId", raw: match[0], text: match[0] }
-      },
-      renderer(token) {
-        return messageIdLink(token.text)
-      },
-    },
+    linkExtension("messageId", MESSAGE_ID_HEADER, messageIdLink),
+    linkExtension("sessionId", SESSION_ID, sessionLink),
   ],
 })
 
