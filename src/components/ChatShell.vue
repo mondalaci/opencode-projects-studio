@@ -17,7 +17,7 @@ import { useFileViewer } from "@/stores/fileViewer"
 import { startFilter, stopFilter } from "@/stores/filter"
 import { useGit } from "@/stores/git"
 import { useTray } from "@/stores/tray"
-import { requestComposerFocus } from "@/stores/draft"
+import { attachments, draft, requestComposerFocus } from "@/stores/draft"
 import { requestOpen, requestPromptStep, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
@@ -322,7 +322,15 @@ function onKeyDown(event: KeyboardEvent) {
       break
     case shortcutKeys.stop:
       event.preventDefault()
+      // Stop has a second meaning: with nothing running and nothing typed, the
+      // same gesture nudges the model onward, so a conversation stalled after a
+      // stop can be resumed without reaching for the keyboard to type "go on".
+      // Only from the conversation itself: with a diff or a file filling the
+      // pane the composer is not on screen, so "nothing typed" is not something
+      // the shortcut can see.
       if (isBusy.value || awaitingUser.value) void app.abort()
+      else if (!activeDiff.value && !activeFile.value && !draft.value.trim() && attachments.value.length === 0)
+        void app.continueTurn()
       break
     case shortcutKeys.promptUp:
       // The composer's command menu walks its rows with the arrows, and claims

@@ -443,6 +443,36 @@ export function useApp() {
   }
 
   /**
+   * The nudge the stop shortcut sends on an idle conversation.
+   *
+   * Short on purpose: this one is the reader's "keep going" typed as a single
+   * word, not the longer prompt a reply cut off at the output limit needs —
+   * that one has to forbid repeating itself, while this one only has to ask for
+   * more.
+   */
+  const NUDGE_PROMPT = "Continue"
+
+  /**
+   * Carry the conversation onward when nothing is running.
+   *
+   * The stop shortcut does double duty: `Alt+X` interrupts a turn, and pressed
+   * again on an idle conversation with an empty composer it asks for more
+   * instead of doing nothing. The nudge goes through the composer's own send
+   * path, so it runs on the model and agent the picker holds, exactly as if the
+   * reader had typed the word.
+   *
+   * Returns whether it sent anything. An empty conversation has nothing to
+   * nudge — and must not be given a first prompt behind the reader's back — and
+   * one with a prompt already in flight must not be given a second.
+   */
+  async function continueTurn(): Promise<boolean> {
+    if (chat.sending.value || chat.isBusy.value || chat.awaitingUser.value) return false
+    if (chat.messages.value.length === 0) return false
+    await sendMessage(NUDGE_PROMPT)
+    return true
+  }
+
+  /**
    * Hand a slash command to the server.
    *
    * A command belongs to a conversation, so an empty pane gets one first —
@@ -573,6 +603,7 @@ export function useApp() {
     setVariant,
     abort,
     continueReply,
+    continueTurn,
     deleteSession,
     renameSession,
     replyPermission,
