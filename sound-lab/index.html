@@ -327,6 +327,16 @@ function droidspeak(ctx, out, t0, syllables, opts) {
   return t - t0;
 }
 
+/** The Nokia tune (Gran Vals, 1902): [frequency, start, duration]. */
+const NOKIA = [
+  [659.26, 0, 0.18],   // E5
+  [587.33, 0.2, 0.18], // D5
+  [369.99, 0.4, 0.09], // F#4
+  [415.3, 0.5, 0.09],  // G#4
+  [554.37, 0.6, 0.18], // C#5
+  [493.88, 0.8, 0.36], // B4
+];
+
 /* ------------------------------------------------------------------ *
  * The candidates. `len` is the intended sounding time in seconds (the
  * page measures the real one and flags a mismatch).
@@ -356,6 +366,90 @@ const CANDIDATES = [
     play(ctx, out, t0) {
       voice(ctx, out, { from: 440, t0, dur: 0.35, peak: 0.22, attack: 0.012 });
       voice(ctx, out, { from: 587.3, t0: t0 + 0.18, dur: 0.5, peak: 0.18, attack: 0.012 });
+    },
+  },
+
+  /* --- star trek / nokia ------------------------------------------ *
+   * The "Nokia ring" the 2009 Star Trek film gave young Kirk's
+   * Corvette is the Nokia tune — Tárrega's Gran Vals (1902), so the
+   * notes are public domain and are synthesised here like everything
+   * else, never sampled. The tune's opening hook is four notes,
+   * E5 D5 F#4 G#4; the six-note version adds C#5 B4.
+   * ------------------------------------------------------------------ */
+  {
+    id: "nokia-hail",
+    name: "Nokia tune (hailing)",
+    group: "Star Trek / Nokia",
+    tags: ["memorable", "medium", "sf"],
+    len: 1.4,
+    blurb: "The Gran Vals hook — E5 D5 F#4 G#4, then C#5 into a ringing B4 — on a bright, glassy synth. Instantly recognisable, and nothing like an OS ding.",
+    play(ctx, out, t0) {
+      const bus = echo(ctx, out, 0.17, 0.22, 0.16);
+      for (const [f, at, dur] of NOKIA) {
+        voice(ctx, bus, { from: f, t0: t0 + at, dur, peak: 0.2, attack: 0.004, type: "triangle", filter: { type: "lowpass", from: 5400, q: 0.8 } });
+        voice(ctx, bus, { from: f * 2, t0: t0 + at, dur: dur * 0.75, peak: 0.05, attack: 0.004, type: "sine" });
+      }
+      // A soft fifth above the last note carries the ring-out.
+      voice(ctx, bus, { from: 739.99, t0: t0 + 0.8, dur: 0.36, peak: 0.06, attack: 0.012, type: "sine" });
+    },
+  },
+  {
+    id: "nokia-short",
+    name: "Nokia short (four notes)",
+    group: "Star Trek / Nokia",
+    tags: ["memorable", "short", "sf"],
+    len: 1.0,
+    blurb: "Only the four-note hook — the shortest that still reads as the Nokia tune — with the same glassy octave and a short ring-out.",
+    play(ctx, out, t0) {
+      const bus = echo(ctx, out, 0.15, 0.2, 0.14);
+      for (const [f, at, dur] of NOKIA.slice(0, 4)) {
+        voice(ctx, bus, { from: f, t0: t0 + at, dur: dur + (at === 0.5 ? 0.16 : 0), peak: 0.21, attack: 0.004, type: "triangle", filter: { type: "lowpass", from: 5200, q: 0.8 } });
+        voice(ctx, bus, { from: f * 2, t0: t0 + at, dur: dur * 0.75, peak: 0.05, attack: 0.004, type: "sine" });
+      }
+    },
+  },
+  {
+    id: "nokia-comm",
+    name: "Nokia comm badge",
+    group: "Star Trek / Nokia",
+    tags: ["memorable", "sf", "medium"],
+    len: 1.5,
+    blurb: "The same hook \"beamed in\": every note bends up into pitch through a narrow band-pass, under a comm-channel echo. The most sci-fi of the Nokia set.",
+    play(ctx, out, t0) {
+      const bus = echo(ctx, out, 0.21, 0.3, 0.22);
+      for (const [f, at, dur] of NOKIA) {
+        voice(ctx, bus, { from: f * 0.8, to: f, t0: t0 + at, dur, peak: 0.2, attack: 0.003, type: "sawtooth", filter: { type: "bandpass", from: f, to: f * 1.12, q: 4 } });
+        voice(ctx, bus, { from: f * 2, t0: t0 + at, dur: dur * 0.7, peak: 0.045, attack: 0.003, type: "sine" });
+      }
+      noiseHit(ctx, bus, { t0, dur: 0.03, peak: 0.04, attack: 0.01, filter: { type: "highpass", from: 3500 } });
+    },
+  },
+  {
+    id: "nokia-console",
+    name: "Nokia tune (plain)",
+    group: "Star Trek / Nokia",
+    tags: ["memorable", "clean", "reference"],
+    len: 1.1,
+    blurb: "Gran Vals note for note on a clean triangle with no effects — the reference rendering, close to what a phone actually played.",
+    play(ctx, out, t0) {
+      for (const [f, at, dur] of NOKIA) {
+        voice(ctx, out, { from: f, t0: t0 + at, dur, peak: 0.22, attack: 0.005, type: "triangle" });
+      }
+    },
+  },
+  {
+    id: "hail",
+    name: "Hailing frequencies",
+    group: "Star Trek / Nokia",
+    tags: ["sf", "clean", "medium"],
+    len: 1.3,
+    blurb: "Not the Nokia tune: two rising open fifths with a glassy overtone and a long airy tail — a comms channel opening. The \"something else futuristic\" option.",
+    play(ctx, out, t0) {
+      const bus = echo(ctx, out, 0.22, 0.34, 0.3);
+      voice(ctx, bus, { from: 587.33, t0, dur: 0.5, peak: 0.22, attack: 0.01, type: "triangle" });
+      voice(ctx, bus, { from: 880, t0: t0 + 0.13, dur: 0.62, peak: 0.2, attack: 0.01, type: "triangle" });
+      voice(ctx, bus, { from: 1760, t0: t0 + 0.13, dur: 0.5, peak: 0.05, attack: 0.01, type: "sine" });
+      voice(ctx, bus, { from: 1320, t0: t0 + 0.13, dur: 0.45, peak: 0.04, attack: 0.01, type: "sine" });
     },
   },
 
@@ -1302,6 +1396,7 @@ async function auditAndDraw() {
 // Exposed for the harness (and handy from the console).
 window.__lab = {
   candidates: () => CANDIDATES.map((c) => ({ id: c.id, name: c.name, group: c.group, len: c.len })),
+  defs: () => CANDIDATES,
   render: renderCandidate,
   analyse,
   audit: () => auditAll(),
