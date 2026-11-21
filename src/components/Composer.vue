@@ -645,6 +645,9 @@ function onKeydown(event: KeyboardEvent) {
   /* Tight: the bar carries four controls plus the attach button on one line. */
   gap: 6px;
   flex-wrap: wrap;
+  /* Shrink below the contents so the model pill yields instead of pushing the
+     send button out of the bar. */
+  min-width: 0;
 }
 /* One pill for the two things a run needs: which model, and how hard it thinks.
    The segments inside it are the selectors themselves, so each keeps its own
@@ -658,6 +661,8 @@ function onKeydown(event: KeyboardEvent) {
   border-radius: 999px;
   background: var(--bg-elevated);
   transition: border-color 0.12s;
+  /* Let the pill shrink with the bar; its segments keep their own floors. */
+  min-width: 0;
 }
 .control-group:focus-within {
   border-color: var(--accent);

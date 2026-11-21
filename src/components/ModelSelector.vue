@@ -340,11 +340,6 @@ function costColor(model: ModelInfo): string | undefined {
 .opencode-model-anchor.is-grouped:hover {
   background: var(--bg-hover);
 }
-.opencode-model-anchor.is-grouped .opencode-model-input {
-  /* The group shares one line with three other controls, so the name yields
-     before the group runs out of room. */
-  max-width: 150px;
-}
 .opencode-model-anchor-icon {
   color: var(--accent);
   flex: none;
@@ -352,6 +347,10 @@ function costColor(model: ModelInfo): string | undefined {
 .opencode-model-input {
   width: auto;
   min-width: 96px;
+  /* Room for the longest names the providers hand out. Anything longer is
+     capped here rather than allowed to stretch the pill; inside a group the
+     input still shrinks (see the flex chain in Composer) when the bar is out
+     of room, so a name the bar can hold is never ellipsized. */
   max-width: 360px;
   field-sizing: content;
   border: none;
