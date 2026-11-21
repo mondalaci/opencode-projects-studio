@@ -2,7 +2,6 @@ import { computed, ref } from "vue"
 import { ServerError, type ServerClient } from "@/api/client"
 import { normalizeOrigin } from "@/api/discovery"
 import { isRootDirectory } from "@/api/types"
-import { showNotice } from "./notice"
 import type {
   AgentInfo,
   CommandInfo,
@@ -264,8 +263,10 @@ export function useServer() {
       // and that is *not* the same as a fresh connect with nothing chosen yet —
       // only the latter should fall back to the server's own directory. Telling
       // the two apart is what keeps a project that cannot be opened from turning
-      // into a silent landing somewhere else; there is nothing to stay on at
-      // startup, so the fallback stays, but it is reported.
+      // into a silent landing somewhere else. At startup there is nothing to stay
+      // on, so the fallback stays, but the remembered directory is forgotten: the
+      // project may simply have been moved, and the caller opens the most recent
+      // one from the list anyway, which is where it now lives.
       let gone = false
       let location: LocationInfo | null = null
       if (directory) {
@@ -279,7 +280,12 @@ export function useServer() {
         location = await client.location().catch(() => null)
         dir = location?.directory ?? undefined
         if (gone && directory) {
-          showNotice(`${directory} no longer exists — opened ${dir || "the server's own directory"} instead.`)
+          // Never a red banner for a path the user did not pick in this session:
+          // a moved or deleted project keeps its conversations listed in the
+          // sidebar under its current location, and the caller picks the newest
+          // project from there. Dropping the remembered path also keeps the next
+          // startup from asking about it again.
+          clearSavedDirectory()
         }
       }
       locationInfo.value = location
