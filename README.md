@@ -389,10 +389,10 @@ chime and the notifications.
 "Blocked" covers two different asks, so they do not arrive sounding alike: a
 question waiting on an answer gets the lower, growling figure, and a permission
 or a finished turn gets the rising one. The chimes are synthesised with the Web
-Audio API rather than shipped as files — they are the ones picked out of
-[`sound-lab/index.html`](sound-lab/index.html), at the gains that lab measured as
-equally loud — and Electron runs with `autoplayPolicy: "no-user-gesture-required"`
-so they can sound without a click first.
+Audio API rather than shipped as files, their gains balanced so neither of them
+is the one that shouts — and Electron runs with
+`autoplayPolicy: "no-user-gesture-required"` so they can sound without a click
+first.
 
 ### How the state feed works
 

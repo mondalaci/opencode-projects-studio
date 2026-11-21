@@ -6,10 +6,10 @@
  * Played only when the window is not in front of the user, so they never
  * interrupt someone who is already looking at the conversation.
  *
- * Both figures come from `sound-lab/index.html`: the rising "coin" (card 13) for
- * a finished turn or a permission, and the lower growl (card 16) for a question,
- * so "answer me" does not sound like "you are free". Their gains are the ones the
- * lab measured as equally loud, so neither of them is the one that shouts.
+ * Two figures: the rising "coin" for a finished turn or a permission, and the
+ * lower growl for a question, so "answer me" does not sound like "you are free".
+ * Their gains are balanced against each other, so neither is the one that
+ * shouts.
  *
  * Electron is configured with `autoplayPolicy: "no-user-gesture-required"`, so
  * the context may start without a click; if a platform still refuses, the context
