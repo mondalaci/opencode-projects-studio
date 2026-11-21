@@ -254,6 +254,13 @@ async function renameCurrent(title: string) {
 /* ------------------------------- composer -------------------------------- */
 
 watch(draft, () => nextTick(resize))
+// The field is per project: switching swaps the text under the caret without an
+// input event, and a menu opened against the other project's text would be left
+// filtering for a query that is no longer there.
+watch(directory, () => {
+  slash.value = null
+  void nextTick(resize)
+})
 watch(composerFocusRequest, () => nextTick(() => textarea.value?.focus()))
 
 /**

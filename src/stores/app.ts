@@ -4,7 +4,7 @@ import type { InstanceInfo } from "@/api/discovery"
 import { isRootDirectory, sessionDirectory, type AssistantMessage, type ModelRef } from "@/api/types"
 import { useChat } from "./chat"
 import { useConnection } from "./connection"
-import { draft, requestComposerFocus } from "./draft"
+import { draft, forgetDraft, requestComposerFocus } from "./draft"
 import { useFileViewer } from "./fileViewer"
 import { useFiles } from "./files"
 import { useHiddenProjects } from "./hiddenProjects"
@@ -319,6 +319,7 @@ export function useApp() {
     }
     server.removeProject(entry.directory)
     projects.forgetProject(entry.directory)
+    forgetDraft(entry.directory)
     return result
   }
 

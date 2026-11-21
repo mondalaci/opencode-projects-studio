@@ -484,7 +484,9 @@ lands on its end, since showing a diff unmounts the thread and it would otherwis
 come back at the first message.
 
 Selecting a project, or a conversation within one, puts the keyboard in the
-composer: choosing something is the start of typing in it.
+composer: choosing something is the start of typing in it. What has been typed —
+and what is attached — belongs to the project it was typed in, so switching
+projects parks it there and brings the other project's own text back.
 
 ## Syntax highlighting
 
