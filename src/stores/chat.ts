@@ -29,11 +29,6 @@ export interface SendInput {
   files?: Array<{ mime: string; url: string; filename?: string }>
   model?: ModelRef | null
   agent?: string
-  /**
-   * Image model for `generate_image` to use, as picked in the composer. Sent with
-   * every prompt so the tool learns the choice, and an empty value clears it.
-   */
-  imageModel?: string | null
 }
 
 /**
@@ -413,9 +408,6 @@ export function useChat() {
       const body: PromptInput = {
         text: input.text,
         files: input.files?.map((file) => ({ uri: file.url, name: file.filename })),
-        // Admission metadata, read by the image plugin's prompt hook. Always
-        // present so that going back to "default" clears the remembered choice.
-        metadata: { imageModel: input.imageModel ?? "" },
       }
       const sent = await client.prompt(sessionID, body, { directory })
       // Show the message immediately, under the id the server gave it, so the

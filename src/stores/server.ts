@@ -16,7 +16,7 @@ import type {
 const PREFS_KEY = "opencode-projects-studio.prefs"
 
 interface Preferences {
-  [origin: string]: { model?: ModelRef; directory?: string; imageModel?: string }
+  [origin: string]: { model?: ModelRef; directory?: string }
 }
 
 function loadPrefs(): Preferences {
@@ -84,8 +84,6 @@ const error = ref<string | null>(null)
 const agent = "build"
 
 const selectedModel = ref<ModelRef | null>(null)
-/** Image model the `generate_image` tool should use; null means its own default. */
-const selectedImageModel = ref<string | null>(null)
 
 /** A provider is "connected" when it is not explicitly disabled. */
 function providerConnected(provider: ProviderInfo): boolean {
@@ -128,19 +126,6 @@ const selectedModelInfo = computed<ModelInfo | undefined>(() => {
 
 /** Variant names available for the selected model (reasoning effort, etc.). */
 const selectedModelVariants = computed<string[]>(() => (selectedModelInfo.value?.variants ?? []).map((v) => v.id))
-
-/**
- * Models that can return an image, alphabetical.
- *
- * The auto routers advertise image output but route wherever they like, which is
- * the wrong kind of surprise for a picture, so they are left out of the picker.
- */
-const imageModels = computed<ModelInfo[]>(() =>
-  models.value
-    .filter((model) => (model.capabilities?.output ?? []).includes("image"))
-    .filter((model) => !/(^|\/)(auto|auto-beta)$/.test(model.id))
-    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id)),
-)
 
 /** Currently selected variant for the selected model. */
 const selectedVariant = computed<string | undefined>(() => selectedModel.value?.variant)
@@ -210,9 +195,7 @@ export function useServer() {
   const defaultModel = computed<ModelRef | null>(() => resolveDefaultModel())
 
   function applyDefaults() {
-    const defaults = prefs.value[origin.value ?? ""] ?? {}
     selectedModel.value = resolveDefaultModel()
-    selectedImageModel.value = defaults.imageModel ?? null
   }
 
   /**
@@ -253,7 +236,6 @@ export function useServer() {
     // before the persisted choice loads.
     const saved = prefs.value[instanceOrigin] ?? {}
     if (saved.model) selectedModel.value = saved.model
-    selectedImageModel.value = saved.imageModel ?? null
 
     try {
       // Never scope a request to `/`: opencode would resolve — and so create —
@@ -323,7 +305,6 @@ export function useServer() {
   function applySavedPrefs(instanceOrigin: string) {
     const saved = prefs.value[instanceOrigin] ?? {}
     if (saved.model) selectedModel.value = saved.model
-    selectedImageModel.value = saved.imageModel ?? null
   }
 
   function setDirectory(dir: string) {
@@ -360,7 +341,6 @@ export function useServer() {
     commands.value = []
     selectedDirectory.value = null
     selectedModel.value = null
-    selectedImageModel.value = null
   }
 
   /**
@@ -406,14 +386,6 @@ export function useServer() {
     persistPrefs()
   }
 
-  /** Remember the image model, or `null` to leave the choice to the tool. */
-  function setImageModel(id: string | null) {
-    selectedImageModel.value = id
-    const key = origin.value ?? ""
-    prefs.value = { ...prefs.value, [key]: { ...prefs.value[key], imageModel: id ?? undefined } }
-    persistPrefs()
-  }
-
   /** The directory that scopes all instance requests (the selected project). */
   const directory = computed(() => selectedDirectory.value ?? locationInfo.value?.directory ?? undefined)
 
@@ -438,8 +410,6 @@ export function useServer() {
     selectedModelVariants,
     selectedVariant,
     defaultModel,
-    selectedImageModel,
-    imageModels,
     directory,
     load,
     setDirectory,
@@ -452,6 +422,5 @@ export function useServer() {
     clearProject,
     setModel,
     setVariant,
-    setImageModel,
   }
 }

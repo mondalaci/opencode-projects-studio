@@ -400,7 +400,6 @@ export function useApp() {
         files: files.map((file) => ({ mime: file.mime, url: file.url, filename: file.filename })),
         model: server.selectedModel.value,
         agent: server.agent,
-        imageModel: server.selectedImageModel.value,
       },
       server.directory.value,
     )

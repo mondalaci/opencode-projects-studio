@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { ArrowUp, FileText, Paperclip, Square, TriangleAlert, X } from "lucide-vue-next"
 import SlashMenu from "./SlashMenu.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
-import ImageModelSelector from "./ImageModelSelector.vue"
 import ModelSelector from "./ModelSelector.vue"
 import VariantSelector from "./VariantSelector.vue"
 import { useApp } from "@/stores/app"
@@ -27,7 +26,7 @@ import { acceptsText, answerFromText, visibleFields } from "@/utils/form"
 const app = useApp()
 const { sending, isBusy, awaitingUser, pendingForms } = app.chat
 const { abort, compact, newChat, renameSession, replyForm, runCommand, sendMessage } = app
-const { commands, directory, imageModels, selectedModelInfo, selectedModelVariants } = useServer()
+const { commands, directory, selectedModelInfo, selectedModelVariants } = useServer()
 const mcp = useMcp()
 
 /**
@@ -489,7 +488,6 @@ function onKeydown(event: KeyboardEvent) {
               <VariantSelector grouped />
             </template>
           </div>
-          <ImageModelSelector v-if="imageModels.length" />
           <span v-if="attachmentsUnsupported()" class="warn" title="The selected model may not accept images">
             <TriangleAlert :size="12" /> model may not accept images
           </span>
