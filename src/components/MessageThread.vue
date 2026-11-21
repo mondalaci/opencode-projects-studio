@@ -92,8 +92,17 @@ const turnReply = computed(() => {
  * A running turn that has not begun to answer: the caret waits under the prompt,
  * in the column the reply's text will fill, instead of blinking on the reply that
  * came before it.
+ *
+ * Only when the turn has no reply of its own, though. A prompt sent while a turn
+ * is still writing lands *after* the reply it is adding to, and so does a
+ * question's typed answer, which the conversation weaves in where the tool asked.
+ * The newest side then reads as the reader's while the reply above it keeps its
+ * caret, and waiting here would put a second one below it — two hearts for one
+ * turn, the lower one promising a reply that is already being written above.
  */
-const waiting = computed(() => isBusy.value && !awaitingUser.value && newest.value === "user")
+const waiting = computed(
+  () => isBusy.value && !awaitingUser.value && !turnReply.value && newest.value === "user",
+)
 
 function onScroll() {
   const el = viewport.value
