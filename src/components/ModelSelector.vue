@@ -20,13 +20,15 @@ import {
   ScrollAreaThumb,
   ScrollAreaViewport,
 } from "reka-ui"
-import { Brain, Check, ChevronDown, Search } from "lucide-vue-next"
+import { Brain, Check, ChevronDown, Search, Star } from "lucide-vue-next"
 import type { ModelCost, ModelCostTier, ModelInfo } from "@/api/types"
 import { useApp } from "@/stores/app"
 import { openRequests } from "@/stores/shortcuts"
+import { modelKey, parseModelKey, useStarredModels } from "@/stores/starredModels"
 
 const app = useApp()
 const { providerGroups, models, selectedModel } = app.server
+const { keys: starredKeys, isStarred, toggle: toggleStar } = useStarredModels()
 
 /**
  * Inside a control group the surrounding pill supplies the border, so a segment
@@ -41,20 +43,10 @@ const query = ref("")
 const showAll = ref(false)
 const inputRef = ref<unknown>(null)
 
-const SEP = "::"
-function modelKey(providerID: string, modelID: string) {
-  return `${providerID}${SEP}${modelID}`
-}
-function parseKey(key: string) {
-  const index = key.indexOf(SEP)
-  if (index === -1) return null
-  return { providerID: key.slice(0, index), modelID: key.slice(index + SEP.length) }
-}
-
 const selectedKey = computed<string>({
   get: () => (selectedModel.value ? modelKey(selectedModel.value.providerID, selectedModel.value.id) : ""),
   set: (key) => {
-    const parsed = parseKey(key)
+    const parsed = parseModelKey(key)
     if (!parsed) return
     void app.setModel({ providerID: parsed.providerID, id: parsed.modelID })
     open.value = false
@@ -62,7 +54,7 @@ const selectedKey = computed<string>({
 })
 
 function displayValue(key: string) {
-  const parsed = parseKey(key)
+  const parsed = parseModelKey(key)
   if (!parsed) return ""
   const model = models.value.find((item) => item.providerID === parsed.providerID && item.id === parsed.modelID)
   return model?.name ?? parsed.modelID
@@ -118,9 +110,30 @@ watch([models, selectedModel], () => {
   if (node && node.value !== name) node.value = name
 })
 
+/**
+ * The starred models this server offers, in the order they were starred. Keys
+ * that name a model this server does not have are skipped here but stay stored,
+ * so switching servers does not forget them.
+ */
+const starredModels = computed<ModelInfo[]>(() => {
+  const out: ModelInfo[] = []
+  for (const key of starredKeys.value) {
+    const parsed = parseModelKey(key)
+    if (!parsed) continue
+    const model = models.value.find(
+      (item) => item.providerID === parsed.providerID && item.id === parsed.modelID,
+    )
+    if (model) out.push(model)
+  }
+  return out
+})
+
+/** The synthetic group that holds the starred models above the providers. */
+const STARRED_GROUP = "__starred"
+
 const filteredGroups = computed(() => {
   const q = query.value.trim().toLowerCase()
-  return providerGroups.value
+  const groups = providerGroups.value
     .filter((group) => (q ? true : showAll.value || group.connected))
     .map((group) => ({
       ...group,
@@ -134,6 +147,21 @@ const filteredGroups = computed(() => {
       }),
     }))
     .filter((group) => group.models.length > 0)
+
+  if (q || !starredModels.value.length) return groups
+
+  // Lift the starred models into a group of their own, first, so switching to
+  // one needs neither a search nor scrolling. A model appears in exactly one
+  // place, so it leaves its provider's group while browsing. Searching shows
+  // the plain provider list, where the same models still match normally.
+  const starred = new Set(starredModels.value.map((model) => modelKey(model.providerID, model.id)))
+  return [
+    { providerID: STARRED_GROUP, providerName: "Starred", connected: true, models: starredModels.value },
+    ...groups.map((group) => ({
+      ...group,
+      models: group.models.filter((model) => !starred.has(modelKey(model.providerID, model.id))),
+    })),
+  ].filter((group) => group.models.length > 0)
 })
 
 /** Bound the number of rendered options so huge provider lists stay fast. */
@@ -159,6 +187,12 @@ const resultCount = computed(() => visibleGroups.value.reduce((total, group) => 
 
 function isSelected(model: ModelInfo) {
   return selectedModel.value?.providerID === model.providerID && selectedModel.value?.id === model.id
+}
+
+function starLabel(model: ModelInfo) {
+  return isStarred(model.providerID, model.id)
+    ? `Unstar ${model.name}`
+    : `Star ${model.name} to offer it first`
 }
 
 /** v2 model cost is either a flat cost or a tiered list; flatten to the base. */
@@ -270,6 +304,18 @@ function costColor(model: ModelInfo): string | undefined {
                   class="opencode-model-option"
                   :class="{ 'is-active': isSelected(model) }"
                 >
+                  <button
+                    type="button"
+                    class="opencode-model-star"
+                    :class="{ 'is-starred': isStarred(model.providerID, model.id) }"
+                    :title="starLabel(model)"
+                    aria-hidden="true"
+                    tabindex="-1"
+                    @click.stop.prevent="toggleStar(model.providerID, model.id)"
+                    @keydown.stop
+                  >
+                    <Star :size="13" :fill="isStarred(model.providerID, model.id) ? 'currentColor' : 'none'" />
+                  </button>
                   <span class="opencode-model-name">{{ model.name }}</span>
                   <span
                     v-if="costLabel(model)"
@@ -466,7 +512,7 @@ function costColor(model: ModelInfo): string | undefined {
 }
 .opencode-model-option {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 78px 88px 18px;
+  grid-template-columns: 18px minmax(0, 1fr) 78px 88px 18px;
   align-items: center;
   column-gap: 8px;
   margin: 0 6px;
@@ -484,14 +530,40 @@ function costColor(model: ModelInfo): string | undefined {
 .opencode-model-option.is-active {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.opencode-model-name {
+/* The star toggles without choosing the model, so the menu stays open. It is
+   always drawn, faint when unstarred, so the column does not shift on hover. */
+.opencode-model-star {
   grid-column: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: color 0.12s, opacity 0.12s;
+}
+.opencode-model-option:hover .opencode-model-star,
+.opencode-model-option[data-highlighted] .opencode-model-star {
+  opacity: 1;
+}
+.opencode-model-star:hover {
+  color: var(--text);
+}
+.opencode-model-star.is-starred {
+  color: var(--accent);
+  opacity: 1;
+}
+.opencode-model-name {
+  grid-column: 2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .opencode-model-cost {
-  grid-column: 2;
+  grid-column: 3;
   justify-self: end;
   font-size: 10px;
   color: var(--text-faint);
@@ -499,14 +571,14 @@ function costColor(model: ModelInfo): string | undefined {
   white-space: nowrap;
 }
 .opencode-model-badges {
-  grid-column: 3;
+  grid-column: 4;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
 }
 .opencode-model-check {
-  grid-column: 4;
+  grid-column: 5;
   justify-self: center;
   color: var(--accent);
   display: inline-flex;
