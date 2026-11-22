@@ -432,7 +432,14 @@ function costColor(model: ModelInfo): string | undefined {
   color: var(--text);
 }
 .opencode-model-menu {
-  width: 460px;
+  /* Fit the longest model name instead of clipping it to a fixed 460px: the
+     menu grows to its content, and only the popper's available width (the
+     window, less whatever the collision middleware leaves) caps it. The
+     minimum keeps the menu from jumping narrower as a search filters the
+     list. */
+  width: max-content;
+  min-width: min(460px, var(--reka-popper-available-width, 460px));
+  max-width: var(--reka-popper-available-width, 100vw);
   display: flex;
   flex-direction: column;
   padding: 0;
