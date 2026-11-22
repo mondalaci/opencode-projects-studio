@@ -173,8 +173,12 @@ const filteredGroups = computed(() => {
   ].filter((group) => group.models.length > 0)
 })
 
-/** Bound the number of rendered options so huge provider lists stay fast. */
-const BROWSE_PER_GROUP = 60
+/**
+ * Bound the number of rendered options so huge provider lists stay fast. Sized
+ * for a full gateway catalogue (AnonRouter alone ships ~265 chat models), which
+ * still renders fine; only absurd lists get cut.
+ */
+const BROWSE_PER_GROUP = 500
 const SEARCH_LIMIT = 150
 const visibleGroups = computed(() => {
   if (!query.value.trim()) {
