@@ -333,6 +333,8 @@ export interface ModelInfo {
 export interface ProviderInfo {
   id: string
   name: string
+  /** Present when the provider signs in through an integration of its own. */
+  integrationID?: string
   activation: "auto" | "enabled" | "disabled"
   package?: string
   settings?: Record<string, unknown>
@@ -395,20 +397,70 @@ export interface McpServer {
 
 /* ------------------------------ integrations ----------------------------- */
 
+/**
+ * A field an integration's sign-in asks for.
+ *
+ * The server's integration forms use the same shapes as a session form, plus a
+ * `when` condition on a field that only applies to some answers, and the
+ * `pattern`/`placeholder` hints a provider's own form carries.
+ */
+export interface IntegrationFormField extends FormField {
+  when?: Array<{ key: string; op: "eq" | "neq"; value: string | number | boolean }>
+  pattern?: string
+  placeholder?: string
+}
+
 export type IntegrationMethod =
-  | { type: "oauth"; id: string; label: string }
+  | { type: "oauth"; id: string; label: string; form?: IntegrationFormField[] }
   | { type: "command"; id: string; label: string; command: string[] }
-  | { type: "key"; label?: string; form?: unknown }
-  | { type: "external"; id: string; label: string; form?: unknown }
+  | { type: "key"; label?: string; form?: IntegrationFormField[] }
+  | { type: "external"; id: string; label: string; form?: IntegrationFormField[] }
   | { type: "env"; names: string[] }
+
+/** Why a stored connection still needs a sign-in, and where to do it. */
+export interface ConnectionStatus {
+  status: "needs_auth"
+  message: string
+  url?: string
+}
+
+export type IntegrationConnection =
+  | {
+      type: "credential"
+      id: string
+      label: string
+      method: "key" | "oauth" | "external"
+      status?: ConnectionStatus
+    }
+  | { type: "env"; name: string; status?: ConnectionStatus }
 
 export interface IntegrationInfo {
   id: string
   name: string
   metadata?: Record<string, unknown>
   methods: IntegrationMethod[]
-  connections: unknown[]
+  connections: IntegrationConnection[]
 }
+
+/** A stored credential, as the account list reads it. */
+export interface CredentialEntry {
+  id: string
+  integrationID: string
+  label: string
+  active: boolean
+}
+
+/** A command-method sign-in the server runs for itself. */
+export interface IntegrationCommandAttempt {
+  attemptID: string
+  time: { created: number; expires: number }
+}
+
+export type IntegrationCommandAttemptStatus =
+  | { status: "pending"; message?: string; time: { created: number; expires: number } }
+  | { status: "complete"; time: { created: number; expires: number } }
+  | { status: "failed"; message: string; time: { created: number; expires: number } }
+  | { status: "expired"; time: { created: number; expires: number } }
 
 export interface IntegrationAttempt {
   attemptID: string

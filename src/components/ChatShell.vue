@@ -8,6 +8,7 @@ import DiffViewer from "./DiffViewer.vue"
 import MessageThread from "./MessageThread.vue"
 import Composer from "./Composer.vue"
 import McpDialog from "./McpDialog.vue"
+import IntegrationsDialog from "./IntegrationsDialog.vue"
 import PromptDock from "./PromptDock.vue"
 import FileViewer from "./FileViewer.vue"
 import FindBar from "./FindBar.vue"
@@ -18,7 +19,7 @@ import { startFilter, stopFilter } from "@/stores/filter"
 import { useGit } from "@/stores/git"
 import { useTray } from "@/stores/tray"
 import { attachments, draft, requestComposerFocus } from "@/stores/draft"
-import { requestOpen, requestPromptStep, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
+import { openRequests, requestOpen, requestPromptStep, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
 import { applyScmWidth, scmWidth, setScmWidth } from "@/stores/layout"
@@ -126,6 +127,13 @@ function startScmResize(event: PointerEvent) {
 }
 
 const title = computed(() => current.value?.title || "New chat")
+
+/** The `/connect` dialog, opened by its slash command. */
+const integrationsDialog = ref<InstanceType<typeof IntegrationsDialog> | null>(null)
+watch(
+  () => openRequests.integrations,
+  () => integrationsDialog.value?.start(),
+)
 
 // Reflect the active chat in the browser tab title.
 watch(
@@ -492,6 +500,7 @@ onBeforeUnmount(() => {
     </div>
 
     <McpDialog />
+    <IntegrationsDialog ref="integrationsDialog" />
   </div>
 </template>
 

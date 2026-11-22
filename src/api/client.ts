@@ -2,10 +2,13 @@ import type {
   AgentInfo,
   CommandInfo,
   DataEnvelope,
+  CredentialEntry,
   FormDetail,
   FormInfo,
   IntegrationAttempt,
   IntegrationAttemptStatus,
+  IntegrationCommandAttempt,
+  IntegrationCommandAttemptStatus,
   IntegrationInfo,
   ListEnvelope,
   LocationInfo,
@@ -277,6 +280,17 @@ export class ServerClient {
   /* ------------------------------ integrations ----------------------------- */
 
   /**
+   * Every integration the server knows, with the ways each can be connected.
+   *
+   * These are the model providers and the MCP servers that sign in through an
+   * integration of their own. The TUI's `/connect` dialog lists them.
+   */
+  async integrations(opts: RequestOptions = {}): Promise<IntegrationInfo[]> {
+    const res = await this.request<DataEnvelope<IntegrationInfo[]>>("/api/integration", opts)
+    return res?.data ?? []
+  }
+
+  /**
    * An integration and the ways it can be connected.
    *
    * A remote MCP server that wants a login registers one of its own, so this is
@@ -340,6 +354,96 @@ export class ServerClient {
       `/api/integration/${encodeURIComponent(integrationID)}/connect/oauth/${encodeURIComponent(attemptID)}`,
       { ...opts, method: "DELETE" },
     )
+  }
+
+  /** Store an API key as a new connection of an integration. */
+  async integrationConnectKey(
+    integrationID: string,
+    key: string,
+    opts: RequestOptions & { answer?: Record<string, unknown> } = {},
+  ): Promise<void> {
+    const { answer, ...rest } = opts
+    await this.request<unknown>(`/api/integration/${encodeURIComponent(integrationID)}/connect/key`, {
+      ...rest,
+      method: "POST",
+      body: answer ? { key, answer } : { key },
+    })
+  }
+
+  /** Connect through a method the server completes without a browser round trip. */
+  async integrationConnectExternal(
+    integrationID: string,
+    methodID: string,
+    opts: RequestOptions & { answer?: Record<string, unknown> } = {},
+  ): Promise<void> {
+    const { answer, ...rest } = opts
+    await this.request<unknown>(`/api/integration/${encodeURIComponent(integrationID)}/connect/external`, {
+      ...rest,
+      method: "POST",
+      body: answer ? { methodID, answer } : { methodID },
+    })
+  }
+
+  /** Begin a command-method sign-in, which the server runs as a child process. */
+  async integrationCommandConnect(
+    integrationID: string,
+    methodID: string,
+    opts: RequestOptions = {},
+  ): Promise<IntegrationCommandAttempt | null> {
+    const res = await this.request<DataEnvelope<IntegrationCommandAttempt>>(
+      `/api/integration/${encodeURIComponent(integrationID)}/connect/command`,
+      { ...opts, method: "POST", body: { methodID } },
+    )
+    return res?.data ?? null
+  }
+
+  async integrationCommandStatus(
+    integrationID: string,
+    attemptID: string,
+    opts: RequestOptions = {},
+  ): Promise<IntegrationCommandAttemptStatus | null> {
+    const res = await this.request<DataEnvelope<IntegrationCommandAttemptStatus>>(
+      `/api/integration/${encodeURIComponent(integrationID)}/connect/command/${encodeURIComponent(attemptID)}`,
+      opts,
+    )
+    return res?.data ?? null
+  }
+
+  async integrationCommandCancel(integrationID: string, attemptID: string, opts: RequestOptions = {}): Promise<void> {
+    await this.request<unknown>(
+      `/api/integration/${encodeURIComponent(integrationID)}/connect/command/${encodeURIComponent(attemptID)}`,
+      { ...opts, method: "DELETE" },
+    )
+  }
+
+  /* ------------------------------- credentials ------------------------------ */
+
+  /** Every stored credential, including which one each integration is using. */
+  async credentials(opts: RequestOptions = {}): Promise<CredentialEntry[]> {
+    const res = await this.request<DataEnvelope<CredentialEntry[]>>("/api/credential", opts)
+    return res?.data ?? []
+  }
+
+  async credentialRename(credentialID: string, label: string, opts: RequestOptions = {}): Promise<void> {
+    await this.request<unknown>(`/api/credential/${encodeURIComponent(credentialID)}`, {
+      ...opts,
+      method: "PATCH",
+      body: { label },
+    })
+  }
+
+  async credentialActivate(credentialID: string, opts: RequestOptions = {}): Promise<void> {
+    await this.request<unknown>(`/api/credential/${encodeURIComponent(credentialID)}/activate`, {
+      ...opts,
+      method: "POST",
+    })
+  }
+
+  async credentialRemove(credentialID: string, opts: RequestOptions = {}): Promise<void> {
+    await this.request<unknown>(`/api/credential/${encodeURIComponent(credentialID)}`, {
+      ...opts,
+      method: "DELETE",
+    })
   }
 
   /* -------------------------------- sessions -------------------------------- */

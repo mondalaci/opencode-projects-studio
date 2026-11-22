@@ -23,7 +23,7 @@ import {
 import { Brain, Check, ChevronDown, Search, Star } from "lucide-vue-next"
 import type { ModelCost, ModelCostTier, ModelInfo } from "@/api/types"
 import { useApp } from "@/stores/app"
-import { openRequests } from "@/stores/shortcuts"
+import { modelProviderFilter, openRequests } from "@/stores/shortcuts"
 import { modelKey, parseModelKey, useStarredModels } from "@/stores/starredModels"
 
 const app = useApp()
@@ -90,6 +90,7 @@ watch(open, async (value) => {
     if (!query.value) node?.select()
   } else {
     query.value = ""
+    modelProviderFilter.value = null
   }
 })
 
@@ -133,8 +134,16 @@ const STARRED_GROUP = "__starred"
 
 const filteredGroups = computed(() => {
   const q = query.value.trim().toLowerCase()
+  // `/connect` opens the picker on the provider it just connected. If that
+  // provider is not in the catalogue (yet), the filter would leave an empty
+  // menu, so it only applies when there is something to narrow.
+  const providerFilter =
+    modelProviderFilter.value && providerGroups.value.some((group) => group.providerID === modelProviderFilter.value)
+      ? modelProviderFilter.value
+      : null
   const groups = providerGroups.value
-    .filter((group) => (q ? true : showAll.value || group.connected))
+    .filter((group) => !providerFilter || group.providerID === providerFilter)
+    .filter((group) => (q || providerFilter ? true : showAll.value || group.connected))
     .map((group) => ({
       ...group,
       models: group.models.filter((model) => {

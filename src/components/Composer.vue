@@ -90,6 +90,7 @@ const localCommands = computed<SlashCommand[]>(() => [
   },
   { display: "/search", description: "Search conversations", run: () => openSearch() },
   { display: "/mcps", description: "MCP servers", run: () => openMcpServers() },
+  { display: "/connect", description: "Connect an integration", run: () => requestOpen("integrations") },
   // The one command of this app's own that takes an argument, as the TUI's
   // `/rename <title>` does: `run` is handed the text typed after the name.
   { display: "/rename", description: "Rename this conversation", insert: true, run: renameCurrent },
