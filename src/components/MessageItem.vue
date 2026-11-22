@@ -661,13 +661,14 @@ function isCompose(block: AssistantToolBlock): boolean {
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* Left-aligned within the block, unlike the rows under it: a name too long
-     for the gutter then loses its tail behind the ellipsis rather than its
-     head, and reads as the same name the picker showed. */
-  text-align: left;
+  /* Wrapped rather than cut: the tail of a model's name — "Ultrafast" beside
+     "Uncensored" — is what tells two of them apart, so it is the last thing to
+     drop. Aligned with the block it sits in — right under the assistant's, like
+     the rows around it — so a name that outgrows the gutter breaks onto a
+     second line and still reads as one column against the avatar. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: inherit;
 }
 .meta-row {
   white-space: nowrap;
@@ -707,9 +708,6 @@ function isCompose(block: AssistantToolBlock): boolean {
   }
   .message.user .meta {
     text-align: right;
-  }
-  .meta-model {
-    text-align: inherit;
   }
   .meta-rest {
     position: absolute;
