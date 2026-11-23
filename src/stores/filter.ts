@@ -10,10 +10,21 @@ export type FilterTarget = "projects" | "changes" | null
 
 const target = ref<FilterTarget>(null)
 
+/**
+ * Bumped by every startFilter call, even when the target does not change.
+ *
+ * A repeated Ctrl+R on the sidebar already being filtered leaves `target` the
+ * same, so a watcher on it never fires; the bar watches this instead, which
+ * lets each request re-focus and re-select its input.
+ */
+const request = ref(0)
+
 export const filterTarget = target
+export const filterRequest = request
 
 export function startFilter(next: Exclude<FilterTarget, null>) {
   target.value = next
+  request.value++
 }
 
 export function stopFilter() {

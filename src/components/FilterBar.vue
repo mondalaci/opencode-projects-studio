@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { X } from "lucide-vue-next"
-import { filterTarget } from "@/stores/filter"
+import { filterRequest, filterTarget } from "@/stores/filter"
 
 /**
  * Incremental filter bar for a sidebar list.
@@ -40,11 +40,13 @@ onMounted(() => {
 })
 
 // Ctrl+R / Ctrl+P focus the bar and select whatever is there, so typing starts
-// a new filter rather than appending to the old one.
+// a new filter rather than appending to the old one. Watching the request
+// counter rather than the target means a repeat press on the sidebar already
+// filtered re-focuses the input even though the target itself did not change.
 watch(
-  () => filterTarget.value,
-  async (target) => {
-    if (target !== props.target) return
+  () => filterRequest.value,
+  async () => {
+    if (filterTarget.value !== props.target) return
     await nextTick()
     input.value?.focus()
     input.value?.select()
