@@ -117,6 +117,16 @@ export interface FileReadResult {
   truncated?: boolean
 }
 
+/** An image a reply points at by absolute path, as a data URL. */
+export interface FileImageResult {
+  ok: boolean
+  error?: string
+  /** The image itself, base64-encoded, ready to be an `img` source. */
+  dataUrl?: string
+  /** Size on disk, in bytes. */
+  size?: number
+}
+
 /** One entry of the tray menu, as sent to the main process. */
 export interface TrayMenuItem {
   label?: string
@@ -157,6 +167,8 @@ export interface DesktopTrayApi {
 export interface DesktopFilesApi {
   list(directory: string): Promise<FileListResult>
   read(request: { dir: string; path: string }): Promise<FileReadResult>
+  /** An image a reply points at by absolute path, as a data URL. */
+  image(absolute: string): Promise<FileImageResult>
 }
 
 /** Optional labels for the native directory picker. */

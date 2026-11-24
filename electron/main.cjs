@@ -215,6 +215,8 @@ function registerIpc() {
   // Workspace files, for the file quick-open.
   ipcMain.handle("files:list", (_event, dir) => files.list(dir))
   ipcMain.handle("files:read", (_event, payload) => files.read(payload?.dir, payload?.path))
+  // An image a reply points at by absolute path, for the thread to show.
+  ipcMain.handle("files:image", (_event, absolute) => files.image(absolute))
 
   // The runtime config file: the sidebar reads and writes `hideProjects` here,
   // because a browser page cannot write the file the static server serves.

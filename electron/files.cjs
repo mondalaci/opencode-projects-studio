@@ -15,6 +15,18 @@ const MAX_FILES = 40_000
 const MAX_DEPTH = 12
 /** A glance view, not an editor: read enough to be useful, never the whole file. */
 const MAX_FILE_BYTES = 256 * 1024
+/** An inline image travels as a data URL, so it has to stay worth a message. */
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+/** The image formats a reply may point at, by extension. */
+const IMAGE_MIME = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+}
 
 const SKIP_DIRECTORIES = new Set([
   ".git",
@@ -153,4 +165,39 @@ async function read(dir, relative) {
   }
 }
 
-module.exports = { list, read, MAX_FILE_BYTES }
+/**
+ * An image named by an absolute path, as a data URL the renderer can show.
+ *
+ * A reply's markdown points at files the thread does not own — the artifacts
+ * tree sits outside every project — and the page cannot fetch them: it is served
+ * over loopback HTTP, so `/home/laci/...` is a path on the app's own origin and
+ * the static server answers it with the app shell, which is not an image. The
+ * bytes travel through here instead, base64-encoded, which is the same shape an
+ * attachment from a tool call arrives in.
+ *
+ * Unlike `read`, this is not scoped to a project, because the file being outside
+ * one is the whole point. It is narrowed instead to what an image can be — a
+ * known extension, a regular file, and a size a message can carry — so that a
+ * reply pointing at some other file cannot have it turned into a data URL.
+ */
+async function image(absolute) {
+  if (typeof absolute !== "string" || !path.isAbsolute(absolute)) return { ok: false, error: "Invalid path" }
+  const mime = IMAGE_MIME[path.extname(absolute).toLowerCase()]
+  if (!mime) return { ok: false, error: "Not an image" }
+  let stat
+  try {
+    stat = await fs.stat(absolute)
+  } catch {
+    return { ok: false, error: "File not found" }
+  }
+  if (!stat.isFile()) return { ok: false, error: "Not a file" }
+  if (stat.size > MAX_IMAGE_BYTES) return { ok: false, error: "Image is too large" }
+  try {
+    const buffer = await fs.readFile(absolute)
+    return { ok: true, dataUrl: `data:${mime};base64,${buffer.toString("base64")}`, size: stat.size }
+  } catch {
+    return { ok: false, error: "Could not read the file" }
+  }
+}
+
+module.exports = { list, read, image, MAX_FILE_BYTES, MAX_IMAGE_BYTES }

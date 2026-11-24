@@ -36,6 +36,8 @@ const filesApi = {
   list: (directory) => ipcRenderer.invoke("files:list", directory),
   /** Read one file for the read-only viewer. */
   read: (request) => ipcRenderer.invoke("files:read", request),
+  /** An image a reply points at by absolute path, as a data URL. */
+  image: (absolute) => ipcRenderer.invoke("files:image", absolute),
 }
 
 /** Native OS dialogs a page cannot open itself, such as the folder picker. */

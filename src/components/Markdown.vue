@@ -3,6 +3,7 @@ import { computed, createApp, onBeforeUnmount, onMounted, ref, watch, type App a
 import { marked, type TokenizerAndRendererExtension } from "marked"
 import DOMPurify from "dompurify"
 import { openImage } from "@/stores/lightbox"
+import { desktopBridge } from "@/api/desktop"
 import hljs from "highlight.js/lib/common"
 import { MESSAGE_ID_HEADER, SESSION_ID, codeSpanLink, messageIdLink, sessionLink } from "@/utils/linkify"
 import PronunciationBlock from "./PronunciationBlock.vue"
@@ -218,6 +219,80 @@ function trimCodeSelection() {
   selection.addRange(trimmed)
 }
 
+/* ------------------------------ Local images ------------------------------- */
+
+/**
+ * An image a reply names by path, read through the desktop bridge.
+ *
+ * The thread fetches its images from the app's own origin, which serves the UI
+ * and nothing else: `/home/laci/.local/share/opencode/artifacts/…` is a path
+ * that does not exist there, so a reply pointing at one drew a broken-image
+ * glyph with its alt text beside it. The renderer cannot read a filesystem path
+ * either, but the main process can, so the path is handed over and comes back as
+ * a data URL — the same shape an attachment from a tool call arrives in.
+ *
+ * The HTML is replaced wholesale on every update, so what has been read is kept
+ * by path: a screenshot costs one read however often the message re-renders.
+ */
+const localImages = new Map<string, string>()
+const readingImages = new Set<string>()
+
+/** Percent-decoding that leaves a malformed sequence as it was written. */
+function decodePath(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+/**
+ * The filesystem path an image source names, or null when the browser is to
+ * fetch it itself.
+ *
+ * A scheme, a protocol-relative URL or a relative path belongs to the browser;
+ * only an absolute path names a file this machine holds.
+ */
+function localImagePath(source: string | null): string | null {
+  if (!source) return null
+  if (source.startsWith("file://")) {
+    const path = source.slice("file://".length)
+    return path.startsWith("/") ? decodePath(path) : null
+  }
+  if (!source.startsWith("/") || source.startsWith("//")) return null
+  if (/^[a-z][a-z0-9+.-]*:/i.test(source)) return null
+  return decodePath(source)
+}
+
+function resolveLocalImages() {
+  const bridge = desktopBridge()
+  // A renderer hot-reloaded ahead of the preload it was built against has no
+  // `image` yet; a plain browser has no bridge at all.
+  if (!root.value || !bridge?.files?.image) return
+  for (const image of root.value.querySelectorAll<HTMLImageElement>("img")) {
+    const path = localImagePath(image.getAttribute("src"))
+    if (!path) continue
+    const cached = localImages.get(path)
+    if (cached) {
+      if (image.getAttribute("src") !== cached) image.src = cached
+      continue
+    }
+    if (readingImages.has(path)) continue
+    readingImages.add(path)
+    void bridge.files
+      .image(path)
+      .then((result) => {
+        readingImages.delete(path)
+        if (!result.ok || !result.dataUrl) return
+        localImages.set(path, result.dataUrl)
+        // The element that asked may already have been replaced by a newer
+        // render, so the whole document is swept again with the path cached.
+        resolveLocalImages()
+      })
+      .catch(() => readingImages.delete(path))
+  }
+}
+
 /* ---------------------------------- Mermaid --------------------------------- */
 
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null
@@ -319,6 +394,7 @@ function renderPronunciation() {
 function renderAll() {
   highlight()
   decorateCode()
+  resolveLocalImages()
   void renderMermaid()
   renderPronunciation()
 }
