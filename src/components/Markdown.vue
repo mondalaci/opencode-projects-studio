@@ -4,7 +4,7 @@ import { marked, type TokenizerAndRendererExtension } from "marked"
 import DOMPurify from "dompurify"
 import { openImage } from "@/stores/lightbox"
 import hljs from "highlight.js/lib/common"
-import { MESSAGE_ID_HEADER, SESSION_ID, messageIdLink, sessionLink } from "@/utils/linkify"
+import { MESSAGE_ID_HEADER, SESSION_ID, codeSpanLink, messageIdLink, sessionLink } from "@/utils/linkify"
 import PronunciationBlock from "./PronunciationBlock.vue"
 import { parsePronunciation } from "@/utils/pronunciation"
 
@@ -32,8 +32,8 @@ marked.setOptions({ gfm: true, breaks: true })
  * GFM links a URL and leaves everything else as the words it is written with,
  * and a reply is the one place the plain-text `linkify` never reaches. Marked is
  * where the rest of them belong, because the link is made while the markdown is
- * tokenized: an identifier inside a code span or a fenced block stays code,
- * exactly as a URL there does.
+ * tokenized: an identifier inside a code span or a fenced block stays code. A
+ * URL there is the exception, handled by the code-span renderer below.
  *
  * `pattern` is the same one `linkify` matches, asked about one position at a
  * time, which is all a tokenizer is ever handed; `start` is what keeps the scan
@@ -68,6 +68,18 @@ marked.use({
     linkExtension("messageId", MESSAGE_ID_HEADER, messageIdLink),
     linkExtension("sessionId", SESSION_ID, sessionLink),
   ],
+  renderer: {
+    /**
+     * A reply writes its links in backticks to keep the sentence's punctuation
+     * out of them, which leaves a URL reading as a grey chip that does nothing
+     * when clicked. A span that is exactly a URL is a destination, so it renders
+     * as the link it would have been bare; anything else in backticks — a
+     * command, a path — is code, and `false` hands it to marked's own renderer.
+     */
+    codespan({ text }) {
+      return codeSpanLink(text) ?? false
+    },
+  },
 })
 
 const html = computed(() => {

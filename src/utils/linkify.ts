@@ -120,6 +120,27 @@ function urlLink(url: string): string {
   return `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`
 }
 
+/** A URL and nothing else: what a code span has to hold to be one. */
+const BARE_URL = /^(?:https?:\/\/|www\.)[^\s<>]+$/
+
+/**
+ * A code span that holds a URL and nothing else, as the link it should have been.
+ *
+ * Backticks around a URL are how a reply keeps it whole in a sentence — the
+ * full stop that follows stays out of it, and a long path does not break — not
+ * a claim that the reader should study it as code. So a span that is exactly a
+ * URL becomes a link, while a span with anything else in it (a command, a path,
+ * a URL with words around it) stays code, and a fenced block always does.
+ *
+ * `null` says the span is code for real, which leaves the renderer its default.
+ */
+export function codeSpanLink(text: string): string | null {
+  if (!BARE_URL.test(text)) return null
+  const end = urlEnd(text)
+  if (end === 0) return null
+  return urlLink(text.slice(0, end)) + escapeHtml(text.slice(end))
+}
+
 /**
  * A session id as the link that opens it.
  *
