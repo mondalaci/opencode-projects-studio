@@ -137,6 +137,27 @@ const LAST_RUN_KEY = "opencode-projects-studio.last-run"
  */
 const bootCutoff = readLastRun()
 
+/**
+ * When this run began, frozen at load.
+ *
+ * Adoption is only for a finish that happened while the app was not running. A
+ * finish after this instant belongs to this run, which has the event stream for
+ * it — and the cached project record never learns about the `viewed` stamp the
+ * app posts for a turn it watched, so adopting one again would announce the
+ * same turn on every sweep.
+ */
+const runStartedAt = Date.now()
+
+/**
+ * Conversations whose closed-app finish has already been adopted this run.
+ *
+ * `projects.latest` holds each session as it was last read, so its `viewed`
+ * stamp stays older than a finish the app has since watched or the user has
+ * opened. Without this set, every sweep would adopt the same finish again and
+ * the chime would repeat as soon as the user cleared it.
+ */
+const adopted = new Set<string>()
+
 function readLastRun(): number {
   try {
     const raw = localStorage.getItem(LAST_RUN_KEY)
@@ -641,6 +662,13 @@ export function useSessionState() {
    * act (opening it) or the app's (watching it finish), never a side effect of
    * walking the list: a backfill that stamped every row on screen used to clear
    * the Cinnamon applet's tile and the studio's dot for finishes nobody opened.
+   *
+   * The pass runs on every viewed sweep, because a project list can finish
+   * loading after the first one, but what it may adopt is bounded twice: the
+   * finish must be old enough to predate this run, and a conversation already
+   * adopted is skipped for the rest of the run. Otherwise a finish the app
+   * watched — whose `viewed` stamp the cached record never sees — would come
+   * back as unread every five seconds, chiming each time.
    */
   function adoptUnreadRows() {
     // No previous run on record: there is no way to tell a finish from before
@@ -651,8 +679,12 @@ export function useSessionState() {
       const idle = session.time?.idle
       if (!idle) continue
       if (session.time?.viewed && session.time.viewed >= idle) continue
+      // A finish at or after this run's start is the stream's to report.
+      if (idle > runStartedAt) continue
       if (unread.value.has(session.id)) continue
       if (idle <= bootCutoff) continue
+      if (adopted.has(session.id)) continue
+      adopted.add(session.id)
       markUnreadIfUnwatched(session.id)
     }
   }
