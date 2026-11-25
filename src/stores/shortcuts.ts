@@ -20,9 +20,20 @@ export function setHeldModifier(value: ShortcutModifier | null) {
   heldModifier.value = value
 }
 
-export const openRequests = reactive({ model: 0, project: 0, sessions: 0, effort: 0, tools: 0, chats: 0, integrations: 0 })
+export const openRequests = reactive({
+  model: 0,
+  project: 0,
+  sessions: 0,
+  effort: 0,
+  tools: 0,
+  chats: 0,
+  integrations: 0,
+  attention: 0,
+})
 
-export function requestOpen(which: "model" | "project" | "sessions" | "effort" | "tools" | "chats" | "integrations") {
+export function requestOpen(
+  which: "model" | "project" | "sessions" | "effort" | "tools" | "chats" | "integrations" | "attention",
+) {
   if (which === "model") modelProviderFilter.value = null
   openRequests[which] += 1
 }
@@ -61,6 +72,12 @@ export function requestPromptStep(which: "up" | "down") {
 export const shortcutKeys = {
   model: "KeyM",
   project: "KeyP",
+  /**
+   * Jump to the first conversation that needs a human. `A` for attention: the
+   * all-projects list fills such a row with its state's colour, and this is the
+   * key that takes you to the topmost one.
+   */
+  attention: "KeyA",
   newChat: "KeyN",
   focusChat: "KeyC",
   sessions: "KeyS",

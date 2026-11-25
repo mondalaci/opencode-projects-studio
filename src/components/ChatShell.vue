@@ -33,7 +33,7 @@ const tray = useTray()
 const { current, currentID } = app.sessions
 const { error, messages, isBusy, awaitingUser, contentBelow, requestScrollToBottom } = app.chat
 const { models, selectedModelInfo } = app.server
-const { newChat, cycleProject, cycleSession } = app
+const { newChat, cycleChat, cycleSession } = app
 
 /** The change row whose diff is open; while set, the diff replaces the chat. */
 const activeDiff = git.selection
@@ -253,7 +253,7 @@ function onKeyDown(event: KeyboardEvent) {
   }
 
   // The incremental searches use the familiar editor bindings: Ctrl+R filters
-  // the projects sidebar, Ctrl+P the source-control list. Chromium's own Ctrl+R
+  // the chat list, Ctrl+P the source-control list. Chromium's own Ctrl+R
   // reload and Ctrl+P print are not wanted here, and with no application menu
   // there is no accelerator keeping them alive.
   if ((event.ctrlKey || event.metaKey) && !event.altKey) {
@@ -264,12 +264,13 @@ function onKeyDown(event: KeyboardEvent) {
       openFind()
       return
     }
-    // Ctrl+PageDown / Ctrl+PageUp walk the projects in sidebar order, the way the
-    // same pair walks tabs elsewhere. A handler closer to the target (the
-    // composer's slash menu) may already have claimed the key, so leave it be.
+    // Ctrl+PageDown / Ctrl+PageUp walk the all-projects chat list, the way the
+    // same pair walks tabs elsewhere: down toward the older conversations, up
+    // toward the newer ones. A handler closer to the target (the composer's slash
+    // menu) may already have claimed the key, so leave it be.
     if (!event.defaultPrevented && (event.code === "PageDown" || event.code === "PageUp")) {
       event.preventDefault()
-      void cycleProject(event.code === "PageDown" ? 1 : -1)
+      void cycleChat(event.code === "PageDown" ? 1 : -1)
       return
     }
     // Ctrl+ArrowUp / Ctrl+ArrowDown walk the open project's conversations in the
@@ -284,7 +285,7 @@ function onKeyDown(event: KeyboardEvent) {
     }
     if (event.code === "KeyR") {
       event.preventDefault()
-      startFilter("projects")
+      startFilter("chats")
       return
     }
     if (event.code === "KeyP") {
@@ -303,6 +304,10 @@ function onKeyDown(event: KeyboardEvent) {
     case shortcutKeys.project:
       event.preventDefault()
       requestOpen("project")
+      break
+    case shortcutKeys.attention:
+      event.preventDefault()
+      requestOpen("attention")
       break
     case shortcutKeys.sessions:
       event.preventDefault()

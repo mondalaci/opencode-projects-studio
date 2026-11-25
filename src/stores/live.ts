@@ -3,6 +3,7 @@ import type { ServerClient } from "@/api/client"
 import type { ServerEvent } from "@/api/types"
 import { useChat } from "./chat"
 import { useProjects } from "./projects"
+import { useRecentChats } from "./recentChats"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
 
@@ -13,6 +14,7 @@ const lastEventAt = ref<number | null>(null)
 const chat = useChat()
 const sessions = useSessions()
 const projects = useProjects()
+const recentChats = useRecentChats()
 const server = useServer()
 
 /**
@@ -104,6 +106,7 @@ function apply(event: ServerEvent) {
   const data = event.data
   sessions.applyEvent(event.type, data)
   projects.applyEvent(event.type, data, event.location?.directory)
+  recentChats.applyEvent(event.type, data, event.location?.directory)
   chat.applyEvent(event.type, data)
 
   // A turn ending is the point the server has persisted the final messages, so
@@ -170,6 +173,9 @@ async function resync(client: ServerClient) {
   } catch {
     /* ignore */
   }
+  // The all-projects list missed whatever arrived while the stream was down, so
+  // it is re-read as well — one bounded request, not one per project.
+  void recentChats.load(client)
   await chat.reconcile(client, directory)
 }
 

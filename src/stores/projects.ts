@@ -1,58 +1,48 @@
 import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
-import { ROOT_DIRECTORY, sessionDirectory, type ProjectInfo, type SessionInfo } from "@/api/types"
+import { ROOT_DIRECTORY, type ProjectInfo, type SessionInfo } from "@/api/types"
 import { useHiddenProjects } from "./hiddenProjects"
 import { useServer } from "./server"
 
 /**
  * Per-project state for the sidebar.
  *
- * The sidebar lists every project the server knows about with a single
- * conversation each — the newest one — so this store keeps one "latest session"
- * per project directory. Session events feed `applyEvent` so the row keeps
- * tracking the newest conversation without a refetch.
+ * The project picker lists every project the server knows about, and opening one
+ * needs a conversation to land on, so this store keeps one "latest session" per
+ * project directory plus the ones that changed recently (which the tray rolls
+ * up). Session events feed `applyEvent` so the state keeps tracking without a
+ * refetch.
  */
 
 const latest = ref<Record<string, SessionInfo | null>>({})
 const loading = ref(false)
-const loaded = ref(false)
-/** How many projects still need their newest conversation fetched. */
-const pending = ref(0)
 
 /**
- * How recently a conversation must have changed to keep its line on a collapsed
- * project row. Older conversations are still listed — and still announced — when
- * they want attention; the window is only what makes an *idle* conversation old
- * enough to fold away behind the row's chevron.
+ * How recently a conversation must have changed to stay on a project's recent
+ * list, which is what the tray rolls up. Older conversations are still listed —
+ * and still announced — when they want attention; the window is only what makes
+ * an *idle* conversation old enough to drop out of the tray's rollup.
  */
 export const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
 
-/** Conversations fetched per page when an expanded project row loads. */
-const CHATS_PAGE_SIZE = 100
 /**
- * Guard against a cursor that never terminates, not a limit on the project: at
- * the server's page size this covers thousands of conversations.
+ * Conversations read per project when the project list is filled.
+ *
+ * One bounded page per project is all the sidebar needs — the newest
+ * conversation it opens on and the recent ones the tray rolls up — so a project
+ * with years of history costs no more than a fresh one. The size matches the
+ * conversation list the app loads for the open project, so the tray and the
+ * sidebar never disagree about which conversations are recent.
  */
-const CHATS_MAX_PAGES = 50
-
-/** Project directories whose full conversation list is expanded in the sidebar. */
-const expanded = ref<Record<string, true>>({})
-/** Every conversation of a project, once its row has been expanded. */
-const chats = ref<Record<string, SessionInfo[]>>({})
-/** Projects whose conversation list is currently being fetched. */
-const chatsPending = ref<Record<string, true>>({})
-/** How many conversations each project holds, once it has been counted. */
-const counts = ref<Record<string, number>>({})
-/** Total amount (USD) each project has spent, once it has been read. */
-const costs = ref<Record<string, number>>({})
+const LATEST_PAGE_SIZE = 50
 
 /**
  * Root conversations of a project that changed recently, newest first.
  *
- * The collapsed row and the tray list these alongside the project's newest
- * conversation, so a conversation that got a notification does not disappear
- * from view the moment a newer one supersedes it. Bounded by `RECENT_WINDOW_MS`,
- * which is what keeps an idle conversation from standing on the row forever.
+ * The tray lists these alongside the project's newest conversation, so a
+ * conversation that got a notification does not disappear from view the moment a
+ * newer one supersedes it. Bounded by `RECENT_WINDOW_MS`, which is what keeps an
+ * idle conversation from standing in the rollup forever.
  */
 const recent = ref<Record<string, SessionInfo[]>>({})
 
@@ -119,52 +109,27 @@ function updatedAt(session: { time?: SessionInfo["time"] }): number {
   return session.time?.updated ?? session.time?.created ?? 0
 }
 
-/** Whether a conversation changed recently enough to stay on a collapsed row. */
+/** Whether a conversation changed recently enough to stay on the recent list. */
 function withinWindow(session: { time?: SessionInfo["time"] }, now = Date.now()): boolean {
   return now - updatedAt(session) < RECENT_WINDOW_MS
 }
 
-/** A project's conversations and what it has spent in total. */
-interface ProjectSessions {
-  /** Root conversations only, newest first — the rows the sidebar lists. */
-  roots: SessionInfo[]
-  /** The project's whole spend, subagent sessions included. */
-  cost: number
-}
-
 /**
- * Every session of a project, reduced to the root conversations (newest first)
- * and the project's total cost.
+ * A project's newest conversations, newest first — one bounded page, no cursor
+ * followed.
  *
- * A directory can hold more conversations than one page, so the cursor is
- * followed to the end. The pages carry subagent sessions as well as roots: a
- * subagent records its own `cost` and the parent does not roll it up, so the
- * project's total is the sum over *every* session while the sidebar lists — and
- * counts — only the roots.
+ * The list only has to name the conversation a project opens on and the ones
+ * that changed recently, so reading a project's whole history would be paying
+ * for rows nothing shows. Everything older stays reachable through the search
+ * over conversations.
  */
-async function fetchSessions(client: ServerClient, directory: string): Promise<ProjectSessions> {
-  const all = new Map<string, SessionInfo>()
-  const seen = new Set<string>()
-  let cost = 0
-  let cursor: string | undefined
-  for (let page = 0; page < CHATS_MAX_PAGES; page++) {
-    const res = await client.listSessions({
-      directory,
-      limit: CHATS_PAGE_SIZE,
-      cursor,
-    })
-    for (const session of res.data) {
-      // A cursor should not repeat a row, but the total is a sum, so guard it.
-      if (seen.has(session.id)) continue
-      seen.add(session.id)
-      if (!session.parentID) all.set(session.id, session)
-      cost += session.cost ?? 0
-    }
-    const next = res.cursor?.next
-    if (!next || res.data.length === 0) break
-    cursor = next
-  }
-  return { roots: rootsByNewest([...all.values()]), cost }
+async function fetchRecent(client: ServerClient, directory: string): Promise<SessionInfo[]> {
+  const res = await client.listSessions({
+    directory,
+    limit: LATEST_PAGE_SIZE,
+    parentID: "null",
+  })
+  return rootsByNewest(res.data)
 }
 
 /** Run `worker` over `items` with at most `limit` concurrent calls. */
@@ -224,6 +189,29 @@ export function useProjects() {
     allEntries.value.filter((entry) => hidden.isHidden(entry.directory)),
   )
 
+  /**
+   * Directory → the name the sidebar shows for it.
+   *
+   * A chat row names the project it belongs to, and the chat list is filled from
+   * the server's global session list, which carries a directory rather than a
+   * name. Unknown directories — one that has no project row, or an archived
+   * twin — fall back to their folder name so a row never reads as anonymous.
+   */
+  const nameByDirectory = computed(() => {
+    const map = new Map<string, string>()
+    for (const entry of allEntries.value) map.set(entry.directory, entry.name)
+    return map
+  })
+
+  /** The display name of a project directory, known or not. */
+  function displayName(target: string | null | undefined): string {
+    if (!target) return ""
+    const known = nameByDirectory.value.get(target)
+    if (known) return known
+    const folder = target.replace(/\/+$/, "").split("/").filter(Boolean).pop()
+    return folder || target
+  }
+
   /** The entry whose conversation changed most recently, if any. */
   const mostRecent = computed<ProjectEntry | null>(() => {
     let best: ProjectEntry | null = null
@@ -272,7 +260,6 @@ export function useProjects() {
   /** Register a freshly created or updated conversation as a project's newest. */
   function setLatest(target: string | null | undefined, session: SessionInfo) {
     if (!target || session.parentID) return
-    upsertChat(target, session)
     rememberRecent(target, session)
     const current = latest.value[target]
     const next = session.time?.updated ?? session.time?.created ?? 0
@@ -281,13 +268,13 @@ export function useProjects() {
   }
 
   /**
-   * Keep a conversation on its project's recent list, which is what the collapsed
-   * row and the tray show beyond the newest conversation.
+   * Keep a conversation on its project's recent list, which is what the tray
+   * shows beyond the newest conversation.
    *
    * A conversation already listed is always merged in place — an event for it is
    * news whatever its age. One that is new to the list is only added when it
    * changed recently, so a rename cannot drag a long-idle conversation back onto
-   * the row.
+   * the list.
    */
   function rememberRecent(directory: string, session: Partial<SessionInfo> & { id: string }) {
     if (session.parentID) return
@@ -314,20 +301,6 @@ export function useProjects() {
     recent.value = { ...recent.value, [directory]: rootsByNewest([entry, ...list]) }
   }
 
-  /** Drop a deleted conversation from the recent list too. */
-  function forgetRecent(sessionID: string) {
-    let changed = false
-    const next: Record<string, SessionInfo[]> = {}
-    for (const [directory, list] of Object.entries(recent.value)) {
-      if (list.some((item) => item.id === sessionID)) {
-        next[directory] = list.filter((item) => item.id !== sessionID)
-        changed = true
-      } else {
-        next[directory] = list
-      }
-    }
-    if (changed) recent.value = next
-  }
 
   /** A project's recently changed conversations, newest first. */
   function recentFor(directory: string | null | undefined): SessionInfo[] {
@@ -344,31 +317,14 @@ export function useProjects() {
       const hit = list.find((item) => item.id === sessionID)
       if (hit) return hit
     }
-    for (const list of Object.values(chats.value)) {
-      const hit = list.find((item) => item.id === sessionID)
-      if (hit) return hit
-    }
     return undefined
   }
 
-  /**
-   * Keep an expanded project's conversation list current. A no-op until the
-   * list has actually been fetched, so only expanded rows pay for it.
-   */
-  function upsertChat(directory: string, session: SessionInfo) {
-    const list = chats.value[directory]
-    if (!list) return
-    const index = list.findIndex((item) => item.id === session.id)
-    const next =
-      index === -1 ? [session, ...list] : list.map((item, i) => (i === index ? { ...item, ...session } : item))
-    chats.value = { ...chats.value, [directory]: rootsByNewest(next) }
-  }
-
-  /** Drop a deleted conversation from every expanded list. */
+  /** Drop a deleted conversation from its project's recent list. */
   function forgetChat(sessionID: string) {
     let changed = false
     const next: Record<string, SessionInfo[]> = {}
-    for (const [directory, list] of Object.entries(chats.value)) {
+    for (const [directory, list] of Object.entries(recent.value)) {
       if (list.some((item) => item.id === sessionID)) {
         next[directory] = list.filter((item) => item.id !== sessionID)
         changed = true
@@ -376,8 +332,7 @@ export function useProjects() {
         next[directory] = list
       }
     }
-    if (changed) chats.value = next
-    forgetRecent(sessionID)
+    if (changed) recent.value = next
   }
 
   /** Forget everything cached for a project that no longer exists. */
@@ -392,100 +347,14 @@ export function useProjects() {
       delete next[directory]
       recent.value = next
     }
-    if (directory in chats.value) {
-      const next = { ...chats.value }
-      delete next[directory]
-      chats.value = next
-    }
-    if (directory in counts.value) {
-      const next = { ...counts.value }
-      delete next[directory]
-      counts.value = next
-    }
-    if (directory in costs.value) {
-      const next = { ...costs.value }
-      delete next[directory]
-      costs.value = next
-    }
     clearMissing(directory)
-    collapse(directory)
-  }
-
-  /** How many conversations a project holds, or `undefined` until it is counted. */
-  function countFor(directory: string): number | undefined {
-    return counts.value[directory]
-  }
-
-  /** A project's total spend, or `undefined` until it has been read. */
-  function costFor(directory: string): number | undefined {
-    return costs.value[directory]
-  }
-
-  /** Record a conversation this client just created, without a refetch. */
-  function recordCreated(directory: string | null | undefined) {
-    if (!directory) return
-    const current = counts.value[directory]
-    if (current === undefined) return
-    counts.value = { ...counts.value, [directory]: current + 1 }
-  }
-
-  /** Whether a project row is showing its conversation list. */
-  function isExpanded(directory: string) {
-    return expanded.value[directory] === true
-  }
-
-  /** The conversations loaded for an expanded project, newest first. */
-  function chatsFor(directory: string) {
-    return chats.value[directory] ?? []
-  }
-
-  /** Whether an expanded project's conversation list is still loading. */
-  function isChatsLoading(directory: string) {
-    return chatsPending.value[directory] === true
-  }
-
-  /** Fetch a project's whole conversation list (once) for its expanded row. */
-  async function loadChats(client: ServerClient, directory: string) {
-    if (chatsPending.value[directory]) return
-    chatsPending.value = { ...chatsPending.value, [directory]: true }
-    try {
-      const { roots, cost } = await fetchSessions(client, directory)
-      chats.value = { ...chats.value, [directory]: roots }
-      recent.value = { ...recent.value, [directory]: roots.filter((session) => withinWindow(session)) }
-      counts.value = { ...counts.value, [directory]: roots.length }
-      costs.value = { ...costs.value, [directory]: cost }
-    } catch {
-      /* leave whatever was there (usually nothing) in place */
-    } finally {
-      const next = { ...chatsPending.value }
-      delete next[directory]
-      chatsPending.value = next
-    }
-  }
-
-  /** Collapse a project row (its loaded list is kept for the next expand). */
-  function collapse(directory: string) {
-    if (!(directory in expanded.value)) return
-    const next = { ...expanded.value }
-    delete next[directory]
-    expanded.value = next
-  }
-
-  /** Expand or collapse a project row, fetching its conversations on expand. */
-  async function toggleExpanded(client: ServerClient, directory: string) {
-    if (isExpanded(directory)) {
-      collapse(directory)
-      return
-    }
-    expanded.value = { ...expanded.value, [directory]: true }
-    if (!chats.value[directory]) await loadChats(client, directory)
   }
 
   /**
-   * Fetch every project's conversations, so each row knows both its newest
-   * conversation and how many it holds.
+   * Fetch every project's newest conversations, so each project knows the
+   * conversation opening it lands on and the recent ones the tray rolls up.
    *
-   * The session endpoint is scoped by `directory`, so this is one (paginated)
+   * The session endpoint is scoped by `directory`, so this is one bounded
    * request per project, capped to a handful in flight.
    */
   async function load(client: ServerClient) {
@@ -493,50 +362,34 @@ export function useProjects() {
     // The root placeholder is not a project the sidebar shows, so it is not
     // fetched for either — and nothing ends up pointing the app at `/`.
     const list = projects.value.filter((project) => project.canonical !== ROOT_DIRECTORY)
-    pending.value = list.length
     try {
       const results = await mapLimit(list, 6, async (project) => {
         try {
-          // The whole list is read, not just the newest page, because the row
-          // carries the project's conversation count and total cost as well as
-          // its newest conversation.
-          return [project.canonical, await fetchSessions(client, project.canonical)] as const
+          return [project.canonical, await fetchRecent(client, project.canonical)] as const
         } catch {
-          return [project.canonical, { roots: [] as SessionInfo[], cost: 0 }] as const
-        } finally {
-          pending.value = Math.max(0, pending.value - 1)
+          return [project.canonical, [] as SessionInfo[]] as const
         }
       })
       const next: Record<string, SessionInfo | null> = {}
       const nextRecent: Record<string, SessionInfo[]> = {}
-      const nextCounts: Record<string, number> = {}
-      const nextCosts: Record<string, number> = {}
-      for (const [worktree, sessions] of results) {
-        next[worktree] = sessions.roots[0] ?? null
-        nextRecent[worktree] = sessions.roots.filter((session) => withinWindow(session))
-        nextCounts[worktree] = sessions.roots.length
-        nextCosts[worktree] = sessions.cost
+      for (const [worktree, roots] of results) {
+        next[worktree] = roots[0] ?? null
+        nextRecent[worktree] = roots.filter((session) => withinWindow(session))
       }
       latest.value = next
       recent.value = nextRecent
-      counts.value = nextCounts
-      costs.value = nextCosts
-      loaded.value = true
     } finally {
       loading.value = false
-      pending.value = 0
     }
   }
 
-  /** Re-read one project's newest conversation, count and total cost. */
+  /** Re-read one project's newest conversations. */
   async function refreshOne(client: ServerClient, target: string) {
     if (target === ROOT_DIRECTORY) return
     try {
-      const { roots, cost } = await fetchSessions(client, target)
+      const roots = await fetchRecent(client, target)
       latest.value = { ...latest.value, [target]: roots[0] ?? null }
       recent.value = { ...recent.value, [target]: roots.filter((session) => withinWindow(session)) }
-      counts.value = { ...counts.value, [target]: roots.length }
-      costs.value = { ...costs.value, [target]: cost }
     } catch {
       /* leave the previous value in place */
     }
@@ -544,7 +397,7 @@ export function useProjects() {
 
   /**
    * Record a new title for a conversation everywhere it is cached, without a
-   * refetch: the project row that holds it as newest, and its expanded list.
+   * refetch: the project that holds it as newest, and its recent list.
    *
    * The directory is preferred, but the v2 `session.renamed` frame carries it on
    * the envelope rather than the payload, so a caller that did not resolve one
@@ -555,13 +408,6 @@ export function useProjects() {
       const existing = latest.value[directory]
       if (existing?.id === sessionID && existing.title !== title) {
         latest.value = { ...latest.value, [directory]: { ...existing, title } }
-      }
-      const list = chats.value[directory]
-      if (list?.some((item) => item.id === sessionID)) {
-        chats.value = {
-          ...chats.value,
-          [directory]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
-        }
       }
       const list2 = recent.value[directory]
       if (list2?.some((item) => item.id === sessionID)) {
@@ -575,14 +421,6 @@ export function useProjects() {
     for (const [key, session] of Object.entries(latest.value)) {
       if (session?.id === sessionID && session.title !== title) {
         latest.value = { ...latest.value, [key]: { ...session, title } }
-      }
-    }
-    for (const [key, list] of Object.entries(chats.value)) {
-      if (list.some((item) => item.id === sessionID)) {
-        chats.value = {
-          ...chats.value,
-          [key]: list.map((item) => (item.id === sessionID ? { ...item, title } : item)),
-        }
       }
     }
     for (const [key, list] of Object.entries(recent.value)) {
@@ -647,21 +485,11 @@ export function useProjects() {
       const id = data.sessionID as string | undefined
       if (id) {
         forgetChat(id)
+        // The project's newest conversation takes the deleted one's place when
+        // the recent list still knows a newer candidate.
         if (dir && latest.value[dir]?.id === id) {
-          const remaining = chats.value[dir]
-          latest.value = {
-            ...latest.value,
-            [dir]: remaining?.length ? rootsByNewest(remaining)[0] : null,
-          }
+          latest.value = { ...latest.value, [dir]: recent.value[dir]?.[0] ?? null }
         }
-      }
-    } else if (type === "session.step.ended") {
-      // A step's cost is incremental and a session's total is their sum, so the
-      // project grows by each step as it finishes. Subagent steps count too:
-      // their cost sits on the child session, which the parent does not roll up.
-      const cost = data.cost
-      if (dir && typeof cost === "number" && cost !== 0 && costs.value[dir] !== undefined) {
-        costs.value = { ...costs.value, [dir]: costs.value[dir] + cost }
       }
     }
   }
@@ -669,14 +497,7 @@ export function useProjects() {
   function reset() {
     latest.value = {}
     recent.value = {}
-    loaded.value = false
-    pending.value = 0
     loading.value = false
-    expanded.value = {}
-    chats.value = {}
-    chatsPending.value = {}
-    counts.value = {}
-    costs.value = {}
     missing.value = {}
   }
 
@@ -687,33 +508,22 @@ export function useProjects() {
     latest,
     recent,
     loading,
-    loaded,
-    pending,
     /** The project the conversation pane is currently scoped to. */
     current: computed(() => directory.value ?? null),
     projectName,
+    displayName,
     latestFor,
     recentFor,
     findSession,
     setLatest,
     forgetChat,
     forgetProject,
-    isExpanded,
-    chatsFor,
-    isChatsLoading,
-    countFor,
-    costFor,
     isArchived,
     markMissing,
     clearMissing,
-    recordCreated,
-    loadChats,
-    collapse,
-    toggleExpanded,
     load,
     refreshOne,
     applyEvent,
     reset,
-    sessionDirectory,
   }
 }

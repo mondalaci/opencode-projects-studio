@@ -1,7 +1,7 @@
 import type { Credentials } from "@/api/client"
 import { desktopBridge } from "@/api/desktop"
 import type { InstanceInfo } from "@/api/discovery"
-import { isRootDirectory, sessionDirectory, type AssistantMessage, type ModelRef } from "@/api/types"
+import { isRootDirectory, sessionDirectory, type AssistantMessage, type ModelRef, type SessionInfo } from "@/api/types"
 import { useChat } from "./chat"
 import { useConnection } from "./connection"
 import { draft, forgetDraft, requestComposerFocus } from "./draft"
@@ -12,6 +12,7 @@ import { useSessionState } from "./sessionState"
 import { useLive } from "./live"
 import { showNotice } from "./notice"
 import { useProjects, type ProjectEntry } from "./projects"
+import { useRecentChats } from "./recentChats"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
 import {
@@ -27,6 +28,7 @@ export function useApp() {
   const server = useServer()
   const sessions = useSessions()
   const projects = useProjects()
+  const recentChats = useRecentChats()
   const chat = useChat()
   const live = useLive()
   const files = useFiles()
@@ -45,6 +47,7 @@ export function useApp() {
     chat.reset()
     sessions.reset()
     projects.reset()
+    recentChats.reset()
     server.reset()
     files.reset()
     fileViewer.close()
@@ -65,8 +68,10 @@ export function useApp() {
       await hidden.load()
 
       // One conversation per project: fetch each project's newest conversation
-      // so the sidebar can open on the most recent one by default.
-      await projects.load(client)
+      // so the sidebar can open on the most recent one by default. The
+      // all-projects chat list is a single global request, so the two run
+      // together.
+      await Promise.all([projects.load(client), recentChats.load(client)])
 
       const target = projects.mostRecent.value?.directory ?? null
       // A refused switch loaded nothing, so the directory the app is on still has
@@ -86,6 +91,7 @@ export function useApp() {
       chat.reset()
       sessions.reset()
       projects.reset()
+      recentChats.reset()
       server.reset()
       hidden.reset()
       connection.disconnect()
@@ -99,6 +105,7 @@ export function useApp() {
     chat.reset()
     sessions.reset()
     projects.reset()
+    recentChats.reset()
     server.reset()
     files.reset()
     fileViewer.close()
@@ -115,6 +122,7 @@ export function useApp() {
     const info = await client.getSession(sessionID, { directory: server.directory.value }).catch(() => null)
     if (info) {
       sessions.upsert(info)
+      recentChats.merge(info)
       const directory = sessionDirectory(info)
       if (directory) projects.setLatest(directory, info)
     }
@@ -123,8 +131,14 @@ export function useApp() {
     // longer offers falls back to the remembered default.
     server.applySessionModel(info?.model)
     // After the info is in hand: publishing the view needs the conversation's
-    // idle stamp, which only the fetched record carries.
-    sessionState.markSeen(sessionID)
+    // idle stamp, which only the fetched record carries. Marking it seen is a
+    // claim about the user — that they are looking at it — so only make it when
+    // the window actually has the focus. A restored window sitting on another
+    // workspace is not looking at anything; the focus watcher in the state store
+    // catches up when the user comes back.
+    if (typeof document === "undefined" || (!document.hidden && document.hasFocus())) {
+      sessionState.markSeen(sessionID)
+    }
     await chat.open(client, sessionID, server.directory.value)
   }
 
@@ -140,6 +154,23 @@ export function useApp() {
     if (isRootDirectory(directory)) return false
     if (directory && directory !== server.directory.value && !(await switchProject(directory))) return false
     await selectSession(sessionID)
+    return true
+  }
+
+  /**
+   * Open a row of the all-projects chat list.
+   *
+   * The row already carries the conversation's project, so the switch needs no
+   * lookup of its own — one `getSession` is saved on every click.
+   */
+  async function openChat(chat: SessionInfo): Promise<boolean> {
+    const directory = sessionDirectory(chat)
+    if (!directory) return openSessionByID(chat.id)
+    if (directory !== server.directory.value && !(await switchProject(directory))) return false
+    await selectSession(chat.id)
+    // Choosing a conversation is the same intent as choosing its project: start
+    // typing there.
+    requestComposerFocus()
     return true
   }
 
@@ -219,25 +250,28 @@ export function useApp() {
   }
 
   /**
-   * Move to the next (`+1`) or previous (`-1`) project in the sidebar's order,
-   * wrapping around at either end. It behaves like clicking the row: the
-   * project's newest conversation opens, and the composer takes focus.
+   * Move to the next (`+1`, older) or previous (`-1`, newer) conversation in the
+   * all-projects list, wrapping around at either end.
+   *
+   * The order is the one the top half of the sidebar shows — newest first across
+   * every project — so `+1` walks down toward the older conversations and `-1`
+   * up toward the newer ones. It behaves like clicking the row: the conversation
+   * opens, its project comes with it, and the composer takes focus.
    */
-  async function cycleProject(delta: 1 | -1) {
-    // A row whose folder is gone cannot be opened, so it is skipped rather than
-    // tried and refused on every press — which would leave the keyboard stuck on
-    // the same neighbour.
-    const list = projects.entries.value.filter((entry) => !entry.archived)
+  async function cycleChat(delta: 1 | -1) {
+    const list = recentChats.chats.value
     if (!list.length) return
-    const index = list.findIndex((entry) => entry.directory === server.directory.value)
+    const index = list.findIndex((chat) => chat.id === sessions.currentID.value)
+    // With nothing open (or a conversation that has aged out of the list) the
+    // first press opens the newest, so a press never lands back where it started.
     if (index === -1) {
-      await openProject(list[delta > 0 ? 0 : list.length - 1].directory)
+      await openChat(list[0])
       return
     }
-    const target = list[(index + delta + list.length) % list.length].directory
-    // A single project wraps onto itself; reopening it would only reset focus.
-    if (target === server.directory.value) return
-    await openProject(target)
+    const target = list[(index + delta + list.length) % list.length]
+    // A single conversation wraps onto itself; reopening it would only reset focus.
+    if (target.id === sessions.currentID.value) return
+    await openChat(target)
   }
 
   /**
@@ -319,6 +353,7 @@ export function useApp() {
     }
     server.removeProject(entry.directory)
     projects.forgetProject(entry.directory)
+    recentChats.forgetProject(entry.directory)
     forgetDraft(entry.directory)
     return result
   }
@@ -372,7 +407,7 @@ export function useApp() {
     )
     if (server.directory.value) {
       projects.setLatest(server.directory.value, session)
-      projects.recordCreated(server.directory.value)
+      recentChats.merge(session)
     }
     await selectSession(session.id)
     requestComposerFocus()
@@ -542,6 +577,7 @@ export function useApp() {
     const target = directory ?? server.directory.value
     await client.deleteSession(sessionID, { directory: target })
     sessions.forget(sessionID)
+    recentChats.forget(sessionID)
     // Deleting the open conversation leaves no model to show, so the picker
     // falls back to the remembered default for the next one.
     if (!sessions.currentID.value) server.applySessionModel(null)
@@ -557,6 +593,7 @@ export function useApp() {
     const info = await client.updateSession(sessionID, { title }, { directory: target })
     if (!info) return
     if (target === server.directory.value) sessions.upsert(info)
+    recentChats.merge(info)
     const owner = sessionDirectory(info) ?? target
     if (owner) projects.setLatest(owner, info)
   }
@@ -578,6 +615,7 @@ export function useApp() {
     server,
     sessions,
     projects,
+    recentChats,
     hidden,
     sessionState,
     chat,
@@ -587,13 +625,14 @@ export function useApp() {
     selectSession,
     switchProject,
     openProject,
-    cycleProject,
+    cycleChat,
     cycleSession,
     hideProject,
     unhideProject,
     deleteProject,
     addProject,
     openSessionByID,
+    openChat,
     openInitialSession,
     newChat,
     sendMessage,

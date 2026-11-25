@@ -6,13 +6,13 @@ import { filterRequest, filterTarget } from "@/stores/filter"
 /**
  * Incremental filter bar for a sidebar list.
  *
- * Ctrl+R targets the projects list and Ctrl+P the source-control list; both use
+ * Ctrl+R targets the all-projects chat list and Ctrl+P the source-control list; both use
  * this bar, so the list is narrowed in place rather than in an overlay. The list
  * itself stays in charge of what matches — the bar only reports the query and the
  * keyboard intent (move the cursor, open the current row, close).
  */
 const props = defineProps<{
-  target: "projects" | "changes"
+  target: "chats" | "changes"
   placeholder: string
   /** Items currently shown, and how many the list holds before filtering. */
   shown: number

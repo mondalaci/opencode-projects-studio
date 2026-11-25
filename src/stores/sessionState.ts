@@ -2,6 +2,7 @@ import { computed, ref } from "vue"
 import type { ServerClient } from "@/api/client"
 import { sessionDirectory, type FormInfo, type PermissionRequest, type ServerEvent, type SessionInfo } from "@/api/types"
 import { useProjects, RECENT_WINDOW_MS } from "./projects"
+import { useRecentChats } from "./recentChats"
 import { useServer } from "./server"
 import { useSessions } from "./sessions"
 import {
@@ -62,7 +63,7 @@ interface SessionSignals {
   blockedDirectory?: string
 }
 
-/** A conversation a project's collapsed row and the tray list. */
+/** A conversation a project's tray entry lists. */
 export interface VisibleConversation {
   id: string
   title: string
@@ -74,16 +75,14 @@ export interface VisibleConversation {
 
 const signals = ref<Record<string, SessionSignals>>({})
 const unread = ref<Set<string>>(loadUnread())
-/** Rows whose "this is not news" judgement has already been sent to the server. */
-const published = ref<Set<string>>(new Set())
 const globalLive = ref(false)
 
 /**
  * Conversation id → title and directory, for conversations the recent list does
  * not hold.
  *
- * The collapsed project row and the tray show every conversation that is recent
- * *or* wants attention, and a conversation that has been waiting since before
+ * The tray shows every conversation that is recent *or* wants attention, and a
+ * conversation that has been waiting since before
  * the window is exactly the one the recent list drops — so its name has to come
  * from somewhere. Anything this app has cached is read from the projects store;
  * the rest is fetched once and remembered here.
@@ -125,10 +124,43 @@ function persistUnread() {
   }
 }
 
+const LAST_RUN_KEY = "opencode-projects-studio.last-run"
+
+/**
+ * When the previous run of the app ended, read once at startup.
+ *
+ * A finish that happened after this stamp was never seen by anybody: the app was
+ * not running, so no window could have watched it. Such a finish must not be
+ * reported to the server as "viewed" — doing so clears the Cinnamon applet's dot
+ * and the studio's own dot for a conversation nobody opened. The stamp is frozen
+ * at load: updating it as the app runs would make every new finish look old.
+ */
+const bootCutoff = readLastRun()
+
+function readLastRun(): number {
+  try {
+    const raw = localStorage.getItem(LAST_RUN_KEY)
+    const value = raw ? Number(raw) : 0
+    return Number.isFinite(value) && value > 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+/** Remember when this run last touched the app, for the next run's cutoff. */
+function touchLastRun() {
+  try {
+    localStorage.setItem(LAST_RUN_KEY, String(Date.now()))
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 export function useSessionState() {
   const server = useServer()
   const sessions = useSessions()
   const projects = useProjects()
+  const recentChats = useRecentChats()
 
   function unfocused() {
     if (typeof document === "undefined") return false
@@ -301,6 +333,10 @@ export function useSessionState() {
     if (type === "session.created" || type === "session.updated" || type === "session.renamed") {
       if (directory && directory !== server.directory.value) projects.applyEvent(type, data, directory)
     }
+    // This store follows the stream independently of `live`, so the all-projects
+    // chat list hears about a change once from either subscriber — the merges are
+    // idempotent.
+    recentChats.applyEvent(type, data, directory)
   }
 
   /**
@@ -490,18 +526,27 @@ export function useSessionState() {
     viewedTimer = setInterval(() => {
       const client = activeClient
       if (!client) return
-      publishReadRows(client)
+      adoptUnreadRows()
       if (unread.value.size) void reconcileViewed(client)
       pruneInfo()
+      touchLastRun()
     }, VIEWED_SWEEP_MS)
+    // The stamp is what the next run uses to tell "finished while the app was
+    // closed" from "finished long ago and already read". Record it on the way
+    // out as well as on the timer, so a quick quit does not lose the last gap.
+    window.addEventListener("pagehide", touchLastRun)
+    window.addEventListener("beforeunload", touchLastRun)
   }
 
   function stop() {
+    touchLastRun()
     controller?.abort()
     controller = null
     activeClient = null
     detachAttention?.()
     globalLive.value = false
+    window.removeEventListener("pagehide", touchLastRun)
+    window.removeEventListener("beforeunload", touchLastRun)
     if (sweepTimer) clearInterval(sweepTimer)
     sweepTimer = null
     if (viewedTimer) clearInterval(viewedTimer)
@@ -515,7 +560,6 @@ export function useSessionState() {
     resolving.clear()
     requestSession.clear()
     unread.value = new Set()
-    published.value = new Set()
     persistUnread()
   }
 
@@ -586,28 +630,30 @@ export function useSessionState() {
   }
 
   /**
-   * Tell the server about the rows this window is *not* flagging.
+   * Adopt the finishes that happened while the app was not running.
    *
-   * The studio's dot is its own judgement - a finish it watched, or one the user
-   * has since opened, is not news - and the panel can only show the same dot if
-   * the server knows it. Walking the rows already on screen is also what
-   * backfills the marker the first time the two meet, so the panel does not open
-   * with a row of green for conversations this app has long since read.
+   * A finish from after the previous run ended was never watched by anyone: the
+   * app was closed. Its server marker is still unset, so the panel keeps its
+   * tile — and the studio's own row has to agree, or the two lists disagree
+   * about the same conversation. That is all this pass does.
+   *
+   * It never posts a "viewed" marker. Marking a conversation read is the user's
+   * act (opening it) or the app's (watching it finish), never a side effect of
+   * walking the list: a backfill that stamped every row on screen used to clear
+   * the Cinnamon applet's tile and the studio's dot for finishes nobody opened.
    */
-  function publishReadRows(client: ServerClient) {
+  function adoptUnreadRows() {
+    // No previous run on record: there is no way to tell a finish from before
+    // the app was installed from one during the last shutdown, so adopt nothing.
+    if (!bootCutoff) return
     for (const session of Object.values(projects.latest.value)) {
       if (!session) continue
       const idle = session.time?.idle
       if (!idle) continue
-      if (unread.value.has(session.id)) continue
       if (session.time?.viewed && session.time.viewed >= idle) continue
-      if (published.value.has(session.id)) continue
-      published.value = new Set(published.value).add(session.id)
-      void client.viewSession(session.id, idle).catch(() => {
-        const next = new Set(published.value)
-        next.delete(session.id)
-        published.value = next
-      })
+      if (unread.value.has(session.id)) continue
+      if (idle <= bootCutoff) continue
+      markUnreadIfUnwatched(session.id)
     }
   }
 
@@ -659,9 +705,9 @@ export function useSessionState() {
   }
 
   /**
-   * The conversations a project's collapsed row and the tray show, newest first:
-   * the ones that changed recently, the project's newest, and anything that wants
-   * attention however long it has been waiting.
+   * The conversations a project's tray entry lists, newest first: the ones that
+   * changed recently, the project's newest, and anything that wants attention
+   * however long it has been waiting.
    *
    * The recent list is bounded and the newest is one row, so the only unbounded
    * part is the attention set — which is exactly what must not be lost, since a
@@ -703,13 +749,13 @@ export function useSessionState() {
     return map
   })
 
-  /** The conversations a project's collapsed row and the tray show, newest first. */
+  /** The conversations a project's tray entry lists, newest first. */
   function visibleFor(directory: string | null | undefined): VisibleConversation[] {
     if (!directory) return []
     return visibleByDirectory.value[directory] ?? []
   }
 
-  /** One rollup entry per project, for the sidebar and the tray. */
+  /** One rollup entry per project, for the tray. */
   const projectRollup = computed<ProjectRollup[]>(() =>
     rollupProjects(
       projects.entries.value.map((entry) => ({

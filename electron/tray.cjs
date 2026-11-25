@@ -35,6 +35,18 @@ function createTrayManager({ iconPath, getWindow }) {
   /** Logged once, so the output stays readable while the badge changes. */
   let lastBadgeSize = 0
   let lastSummary = ""
+  /**
+   * The notifications currently on screen.
+   *
+   * Electron's Notification is a thin wrapper over the platform's popup, and the
+   * popup lives exactly as long as the wrapper does: when the wrapper is garbage
+   * collected, the popup is closed with it. A local variable in notify() is
+   * unreachable as soon as the call returns, so V8 collects it and the
+   * notification vanishes a moment after it appears — the "it flashes and
+   * disappears" bug. Holding each one here keeps it alive until the user
+   * dismisses or clicks it; the events remove it from the set afterwards.
+   */
+  const live = new Set()
 
   /** Turn the renderer's menu description into native menu items. */
   function buildMenu(items) {
@@ -133,8 +145,22 @@ function createTrayManager({ iconPath, getWindow }) {
         title: payload?.title ?? "OpenCode Projects Studio",
         body: payload?.body ?? "",
         silent: false,
+        // A permission block waits for the user however long they take, so the
+        // popup must not expire on its own: the desktop's default timeout (a few
+        // seconds) is what made it "flash and disappear". 'never' keeps it until
+        // it is dismissed or clicked.
+        timeoutType: "never",
       })
+      // Keep the wrapper referenced while the popup is on screen, or the garbage
+      // collector takes the popup with it (see `live`).
+      live.add(notification)
+      const forget = () => {
+        live.delete(notification)
+      }
+      notification.on("close", forget)
+      notification.on("failed", forget)
       notification.on("click", () => {
+        forget()
         // A conversation in the web chat app belongs to the browser, so the click
         // opens it there rather than raising a window that does not hold it.
         if (payload?.url && /^https?:\/\//i.test(payload.url)) {
@@ -151,6 +177,15 @@ function createTrayManager({ iconPath, getWindow }) {
     },
 
     destroy() {
+      // The popups belong to the app's lifetime: quitting takes them with it.
+      for (const notification of live) {
+        try {
+          notification.close()
+        } catch {
+          /* already gone */
+        }
+      }
+      live.clear()
       if (tray && !tray.isDestroyed()) tray.destroy()
       tray = null
     },

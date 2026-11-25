@@ -12,18 +12,20 @@ It keeps the whole chat experience — streaming Markdown, reasoning blocks, too
 calls, permissions and questions — and reorganises it around projects instead of
 conversations:
 
-- **Projects sidebar** — every project the server knows about, each showing the
-  conversations that still matter: the ones that changed in the last 24 hours and
-  the ones that want attention (blocked, or finished and not yet opened), newest
-  first — so a conversation that raised a notification does not vanish behind a
-  newer one. A project with none of those folds to its newest conversation alone.
-  The list is ordered by most recent activity, and the newest conversation of the
-  busiest project is what opens on launch. Each row also carries the project's
-  total spend, subagent sessions included, which grows as turns finish. The
-  chevron on a project row expands it to list *every* conversation (newest first);
-  `Alt`+`L` toggles the current project's row. Each row's `⋯` menu hides the
-  project or deletes it for good (behind a confirmation), and a **Hidden** section
-  folds away at the bottom of the list to bring one back. Each conversation's own
+- **Chats sidebar** — split in two. The top half lists the newest conversations
+  of *every* project, newest first, each row naming the project it belongs to above
+  the chat's own subject, with the state dot centred on the two lines and the
+  relative time staying readable while the pointer is on the row (the actions
+  button steps in beside it rather than over it); it is one bounded request from
+  the start, not a pass over each project's history.
+  The bottom half lists only the open project's own conversations (the newest 50),
+  under that project's name. The divider between them drags to give either half
+  more room (double-click evens them out, or focus it and use the arrows), and the
+  share is remembered. The open project is chosen from the **project switcher** in
+  the sidebar header (`Alt`+`P`), which searches projects as it is typed and also
+  holds **Add project**; its `⋯` menu on the bottom
+  half's header hides or deletes it (behind a confirmation), and a **Hidden**
+  section folds away under the split to bring one back. Every conversation's own
   `⋯` menu renames it or deletes it for good, also behind a confirmation.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
@@ -38,7 +40,14 @@ conversations:
   window, and clicking again returns it.
 - **Conversation state dots** — every listed conversation carries a dot: red
   blocked, amber working, green done and not yet opened, grey idle. A project's
-  own state is the most actionable of its conversations.
+  own state is the most actionable of its conversations. In the all-projects half
+  a conversation that waits for a human fills its whole row with the state's
+  colour and writes in dark ink — bright green for an unread finish, bright red
+  for a blocked turn — the way the Cinnamon applet's tiles do, so it is visible
+  without reading the dots; working and idle keep the list background. A fill that
+  has just ended (the conversation was opened, or its block was answered) does not
+  blink out: it shrinks away to the right over six seconds, its ink turning back
+  into the ordinary text colours on the way.
 - **Tray icon** — the same state rolled up across all projects into one badge,
   with a menu that jumps straight to the conversation that needs you; a project
   with several conversations worth showing becomes a submenu of them.
@@ -48,7 +57,7 @@ until you go back (the `←` button or `Esc`).
 
 ## Screenshots
 
-Projects sidebar, chat, and the source-control panel for the active project:
+Chats sidebar, chat, and the source-control panel for the active project:
 
 ![Studio](docs/screenshots/studio.png)
 
@@ -175,7 +184,8 @@ scripts/
   dev.mjs            Starts Vite, waits for the port, then launches Electron
 src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   api/desktop.ts     Typed access to the preload bridge
-  stores/projects.ts One newest conversation per project, plus its recent and expanded lists
+  stores/projects.ts One newest conversation per project, plus the recent list the tray rolls up
+  stores/recentChats.ts  The all-projects chat list: one bounded session query, kept live by events
   stores/hiddenProjects.ts  The hidden-project list, read and written through the runtime config
   stores/git.ts      Source-control state: status polling, selection, diffs
   stores/layout.ts   Source-control panel width
@@ -184,8 +194,9 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
   stores/find.ts     Find-in-conversation state (Ctrl+F)
   components/
-    ProjectsPanel.vue     Projects sidebar (expandable into per-project chats)
-    ProjectMenu.vue       Hide / unhide / delete actions of one project row
+    ChatsPanel.vue        The split sidebar: all projects' chats above, the open project's chats below
+    ProjectPicker.vue     The header's project switcher, and the Add project entry
+    ProjectMenu.vue       Hide / unhide / delete actions of one project
     ConversationMenu.vue  Rename / delete actions of one conversation row
     ConfirmDialog.vue     Modal confirmation before a project or conversation is deleted
     SourceControl.vue     Right-hand source-control panel (flat, full paths)
@@ -298,14 +309,15 @@ needs you without the window in front. It rolls up in two steps:
    `blocked > retry/error > working > done (unacknowledged) > idle`.
 3. **Tray** — the same precedence across projects, plus the counts.
 
-A project does not roll up from a single conversation. Each row — and each
-project's menu entry — lists every conversation that is *recent* or wants
-attention: anything that changed in the last 24 hours, plus anything blocked or
-finished-and-unopened however long it has been waiting, plus the project's newest
-conversation. A conversation that got a notification therefore keeps its line
-even after a newer one arrives, and a project that has been sitting on an
-unanswered block still counts as needing you. The idle conversations that have
-aged out are what the row's chevron is for.
+A project does not roll up from a single conversation. Its tray entry — and its
+submenu — lists every conversation that is *recent* or wants attention: anything
+that changed in the last 24 hours, plus anything blocked or finished-and-unopened
+however long it has been waiting, plus the project's newest conversation. A
+conversation that got a notification therefore keeps its line even after a newer
+one arrives, and a project that has been sitting on an unanswered block still
+counts as needing you. The sidebar's all-projects half is the newest
+conversations across projects instead, so an idle one that has aged out of it is
+found through the search over conversations.
 
 The badge is baked into the icon bitmap, since trays have no numeric-badge API:
 the mark's cog in monochrome — so it sits with the panel's own icons rather than standing out
@@ -328,7 +340,11 @@ logs a warning and carries on without it.
 
 "Done" is sticky-unread: a turn that finishes while you are not looking marks its
 conversation green, and opening it clears the mark. The set is kept in
-`localStorage`, so it survives a restart.
+`localStorage`, so it survives a restart. The app only ever *reads* that marker
+when you open a conversation or when it watches a turn finish — it never stamps
+a conversation as seen just because the row is on screen. A finish that arrived
+while the app was closed is adopted as unread instead, so its tile stays until
+you open it.
 
 ### The web chat app's conversations
 
@@ -384,7 +400,10 @@ two-note chime and, for a permission block, raises a desktop notification. A
 question gets the chime only: it is answered in the app, so the popup would
 interrupt more than it helps. A conversation that is merely *working* never
 announces itself, nothing already announced repeats, and Mute silences both the
-chime and the notifications.
+chime and the notifications. The desktop popup does not time out on its own
+(`timeoutType: "never"`): it stays until it is dismissed or clicked, so a block
+that arrives while you are on another workspace is still there when you come
+back.
 
 "Blocked" covers two different asks, so they do not arrive sounding alike: a
 question waiting on an answer gets the lower, growling figure, and a permission
@@ -412,8 +431,8 @@ anything missed while offline.
 
 An auto-generated title is one of those changes: the server emits a
 `session.renamed` frame (id + title, located on the frame rather than the
-payload), which updates a project's row and its expanded conversation list in
-place. Without it a fresh conversation sat as "Untitled" until the row was
+payload), which updates the project's newest conversation and both sidebar lists
+in place. Without it a fresh conversation sat as "Untitled" until its row was
 opened, which is what refetched the session.
 
 ## Keyboard shortcuts
@@ -426,15 +445,17 @@ never appears next to the wrong one.
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl`+`F` | Find in the open conversation (browser-style find bar) |
-| `Ctrl`+`R` | Filter the projects sidebar in place |
+| `Ctrl`+`R` | Filter the all-projects chat list in place |
 | `Ctrl`+`P` | Filter the changed files in the source-control panel in place |
 | `Ctrl`+`↑` / `Ctrl`+`↓` | Switch to the previous / next conversation in the open project |
-| `Ctrl`+`PageUp` / `Ctrl`+`PageDown` | Switch to the previous / next project |
-| `Alt`+`P` / `Alt`+`S` | Focus the projects list (arrow keys + `Enter`) |
-| `Alt`+`L` | Expand or collapse the current project's conversations |
+| `Ctrl`+`PageUp` / `Ctrl`+`PageDown` | Switch to the previous / next conversation in the all-projects list |
+| `Alt`+`P` | Open the searchable project switcher |
+| `Alt`+`A` | Jump to the first conversation that needs you (blocked or unread finish) |
+| `Alt`+`S` | Focus the all-projects chat list (arrow keys + `Enter`) |
+| `Alt`+`L` | Fold the open project's conversation list away and back |
 | `Alt`+`N` | New conversation |
 | `Alt`+`F` | Search conversations |
-| `Alt`+`M` / `Alt`+`A` / `Alt`+`E` | Model / agent / effort |
+| `Alt`+`M` / `Alt`+`E` | Model / effort |
 | `Alt`+`C` | Focus the composer |
 | `Alt`+`X` | Stop the current turn |
 | `Alt`+`↑` / `Alt`+`↓` | Jump to your previous / next message in the conversation |
@@ -442,8 +463,10 @@ never appears next to the wrong one.
 
 The two filters narrow their list as you type (subsequences work: `kwchat` finds
 `kilo-web-chat`), `↑`/`↓` move the selection, `Enter` opens it and `Esc` clears
-it. `Ctrl`+`R` and `Ctrl`+`P` are Chromium's reload and print by default; both are
-taken over here, which is what the app's own shortcuts require.
+it. The chats filter matches a conversation's title first and its project's name
+second, so typing `uhk` lists the UHK projects' conversations. `Ctrl`+`R` and
+`Ctrl`+`P` are Chromium's reload and print by default; both are taken over here,
+which is what the app's own shortcuts require.
 
 `Ctrl`+`F` opens a find bar over the open conversation and highlights every match
 in it, painting the active one in the solid accent colour. `Enter` and `Shift`+`Enter`
@@ -452,10 +475,17 @@ closes the bar. Unlike `Alt`+`F`, which searches across conversations, this sear
 only the conversation on screen — the same way a browser's find works on a page.
 
 `Ctrl`+`↑` and `Ctrl`+`↓` walk the open project's conversations in the order the
-sidebar lists them, newest first, so `↑` moves toward the newer conversations and
-`↓` toward the older, wrapping at either end. It is the conversation-level twin of
-`Ctrl`+`PageUp` / `Ctrl`+`PageDown`, which walk the projects; the `Alt`+arrow pair
-steps through prompts within the conversation instead.
+bottom half of the sidebar lists them, newest first, so `↑` moves toward the newer
+conversations and `↓` toward the older, wrapping at either end.
+
+`Ctrl`+`PageUp` and `Ctrl`+`PageDown` walk the all-projects list in its own order —
+the top half of the sidebar, newest first across every project — and open each
+conversation they land on, switching project when it lives elsewhere. They are the
+twin of `Ctrl`+`↑` / `Ctrl`+`↓`, one list higher up.
+
+`Alt`+`A` jumps straight to the topmost conversation that wants a human — a red
+(blocked) or green (unread finish) row of the all-projects list. Opening it
+acknowledges it, so pressing the key again moves on to the next one.
 
 ## Reading a diff
 
@@ -514,37 +544,36 @@ the app background rather than a dark code surface.
 
 ## Remembered state
 
-Theme, sidebar and panel widths, the panel's visibility, the saved server and the
-unread markers all live in `localStorage`, which is keyed by origin — so the UI is
-served from a **fixed** loopback port (`45999`) rather than an ephemeral one. If
-that port is taken, the app falls back to an ephemeral port and says so in the
-log, because settings will not persist for that run.
+Theme, sidebar and panel widths, the chat lists' split, the panel's visibility,
+the saved server and the unread markers all live in `localStorage`, which is keyed
+by origin — so the UI is served from a **fixed** loopback port (`45999`) rather
+than an ephemeral one. If that port is taken, the app falls back to an ephemeral
+port and says so in the log, because settings will not persist for that run.
 
 ## Notes and limitations
 
-- One conversation per project is deliberate: a collapsed project row shows its
-  newest conversation. The row's chevron (`Alt`+`L`) expands the project in
-  place to list all of its conversations; older ones are also reachable through
-  the conversation search (`Alt`+`F`).
+- The all-projects half of the sidebar holds the newest 50 conversations across
+  every project, read in one request; the bottom half holds the open project's
+  newest 50, which is the list the app already loads when it opens the project.
+  Anything older is reachable through the conversation search (`Alt`+`F`), which
+  reads the whole history.
 - Opening a project that has no conversation yet creates its first one.
-- Renaming and deleting are on each conversation's own hover menu: the collapsed
-  project row's names its newest conversation, and every row of an expanded list
-  carries the actions of the chat it belongs to. Both work against the
-  conversation's own project, so no project switch is needed. Deleting a
-  conversation removes it and its messages from opencode for good, and asks for
-  confirmation first.
-- Each project row carries its own `⋯` menu: **Hide** keeps it out of the sidebar
-  by adding it to the runtime config's `hideProjects`, **Unhide** (in the Hidden
-  section at the bottom of the list) takes it back out, and **Delete** removes it
-  and all of its conversations from opencode's database after a confirmation.
-  Hiding is a studio-side view; deleting is real, and cannot be undone.
-- The sidebar header's folder-plus button **adds a project directory**: the
+- Renaming and deleting are on each conversation's own hover menu, in either
+  half of the sidebar. Both act on the conversation's own project, so no project
+  switch is needed. Deleting a conversation removes it and its messages from
+  opencode for good, and asks for confirmation first.
+- The open project's `⋯` menu, on the bottom half's header, carries **Hide** —
+  which keeps it out of the sidebar by adding it to the runtime config's
+  `hideProjects` — and **Delete**, which removes it and all of its conversations
+  from opencode's database after a confirmation. The **Hidden** section under the
+  split lists the hidden ones, with **Unhide**. Hiding is a studio-side view;
+  deleting is real, and cannot be undone.
+- The project switcher's **Add project** entry **adds a project directory**: the
   desktop app opens the OS folder picker, a browser asks for the absolute path by
   hand. opencode has no "add project" call — a directory becomes a project the
   moment a request is scoped to it — so the app resolves the directory with
   `GET /api/location` (which registers it and answers with its canonical path),
-  then opens that row like any other, creating its first conversation if it has
-  none.
+  then opens it like any other, creating its first conversation if it has none.
 - The diff viewer renders text patches; binary changes are reported as such.
 - Requires `git` on `PATH` for the source-control panel.
 - The v2 API has no per-message tool toggles or session sharing, so the tools

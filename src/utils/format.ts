@@ -84,19 +84,6 @@ export function formatCost(value?: number): string {
 }
 
 /**
- * A compact cost for the sidebar rows, where the figure shares a narrow line
- * with the project name: whole dollars once the amount is large enough for
- * cents to be noise, and a shorter tail for the sub-cent spends. The exact
- * figure belongs in the caller's tooltip, via `formatCost`.
- */
-export function formatCostCompact(value?: number): string {
-  if (!value) return "$0"
-  if (value >= 10) return `$${Math.round(value)}`
-  if (value >= 0.01) return `$${value.toFixed(2)}`
-  return `$${value.toFixed(3)}`
-}
-
-/**
  * The arguments a tool's summary is read from, most specific first. A tool that
  * is not listed falls back to the first string argument it has.
  */
