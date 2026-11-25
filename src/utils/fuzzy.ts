@@ -1,5 +1,6 @@
 /**
- * Fuzzy matching for the incremental quick-open searches (Ctrl+R, Ctrl+P).
+ * Fuzzy matching for the incremental quick-open searches (Ctrl+P and the
+ * project switcher).
  *
  * A query matches when its characters appear in order in the target, which is
  * what makes "srpgit" find "src/stores/git.ts". Matches score higher when they

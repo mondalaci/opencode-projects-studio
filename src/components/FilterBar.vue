@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { X } from "lucide-vue-next"
-import { filterRequest, filterTarget } from "@/stores/filter"
+import { filterRequest } from "@/stores/filter"
 
 /**
- * Incremental filter bar for a sidebar list.
+ * Incremental filter bar for the source-control list (Ctrl+P).
  *
- * Ctrl+R targets the all-projects chat list and Ctrl+P the source-control list; both use
- * this bar, so the list is narrowed in place rather than in an overlay. The list
- * itself stays in charge of what matches — the bar only reports the query and the
+ * The list is narrowed in place rather than in an overlay, and the list itself
+ * stays in charge of what matches — the bar only reports the query and the
  * keyboard intent (move the cursor, open the current row, close).
  */
 const props = defineProps<{
-  target: "chats" | "changes"
   placeholder: string
   /** Items currently shown, and how many the list holds before filtering. */
   shown: number
@@ -29,24 +27,22 @@ const emit = defineEmits<{
 const input = ref<HTMLInputElement | null>(null)
 const query = ref("")
 
-// The bar is mounted *because* the target was requested (the v-if matches), so
+// The bar is mounted *because* the filter was requested (the v-if matches), so
 // focus on mount as well as on later changes.
 onMounted(() => {
-  if (filterTarget.value !== props.target) return
   void nextTick(() => {
     input.value?.focus()
     input.value?.select()
   })
 })
 
-// Ctrl+R / Ctrl+P focus the bar and select whatever is there, so typing starts
-// a new filter rather than appending to the old one. Watching the request
-// counter rather than the target means a repeat press on the sidebar already
-// filtered re-focuses the input even though the target itself did not change.
+// Ctrl+P focuses the bar and selects whatever is there, so typing starts a new
+// filter rather than appending to the old one. Watching the request counter
+// rather than the open flag means a repeat press re-focuses the input even
+// though the bar is already up.
 watch(
   () => filterRequest.value,
   async () => {
-    if (filterTarget.value !== props.target) return
     await nextTick()
     input.value?.focus()
     input.value?.select()

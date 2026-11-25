@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { Check, ChevronDown, Folder, FolderPlus, Search } from "lucide-vue-next"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import type { ProjectEntry } from "@/stores/projects"
 import { useApp } from "@/stores/app"
 import { clearNotice, showNotice } from "@/stores/notice"
-import { openRequests } from "@/stores/shortcuts"
+import {
+  closeProjectPicker,
+  projectPickerFocusRequest,
+  projectPickerOpen,
+} from "@/stores/projectPicker"
 import { fuzzyMatch } from "@/utils/fuzzy"
 
 /**
- * The sidebar header's project switcher.
+ * The bottom sidebar half's project switcher.
  *
  * The sidebar lists conversations rather than projects, so the project a chat
  * belongs to is chosen here — the same set of projects the old project list
@@ -18,16 +22,17 @@ import { fuzzyMatch } from "@/utils/fuzzy"
  * Hidden projects stay out: the Hidden section is where they come back from.
  *
  * It searches as it is typed, with the same subsequence matching the sidebar
- * filters use: `opcpro` finds `opencode-projects-studio`, and a match in the
+ * filter uses: `opcpro` finds `opencode-projects-studio`, and a match in the
  * folder name sorts above one buried in the path. Adding a directory is the
  * list's last row, because a project is a thing the switcher manages.
  *
- * `Alt`+`P` opens it, which is also what the badge on the label says.
+ * `Ctrl`+`R` opens it — the key the all-projects filter used to hold — which is
+ * also what the badge on the label says; `Alt`+`P` still opens it too.
  */
 const app = useApp()
 
-/** Whether the popover is open, so the shortcut can open it too. */
-const open = ref(false)
+/** Whether the popover is open, so the shortcuts can open it too. */
+const open = projectPickerOpen
 
 /** The incremental search term. */
 const query = ref("")
@@ -100,27 +105,33 @@ watch(query, () => {
 function focusInput(event?: Event) {
   event?.preventDefault()
   inputEl.value?.focus()
+  inputEl.value?.select()
 }
 
 // Opening starts a fresh search; closing forgets it, so the next open lists
 // every project again.
 watch(open, async (value) => {
-  if (value) {
-    query.value = ""
-    cursor.value = 0
-    await nextTick()
-    focusInput()
-    return
-  }
   query.value = ""
+  cursor.value = 0
+  if (!value) return
+  await nextTick()
+  focusInput()
 })
 
-// Alt+P: open the switcher (or close it again, since the key repeats while the
-// popover holds the focus).
+// The popover cannot outlive its trigger: when the sidebar swaps to the
+// conversation search the picker unmounts, and the next return to the list must
+// not find the switcher still flagged open.
+onBeforeUnmount(() => closeProjectPicker())
+
+// A repeat Ctrl+R while the switcher is already up returns the caret to the
+// search field and selects the term, so typing starts a new search rather than
+// appending to the old one.
 watch(
-  () => openRequests.project,
-  () => {
-    open.value = !open.value
+  () => projectPickerFocusRequest.value,
+  async () => {
+    if (!open.value) return
+    await nextTick()
+    focusInput()
   },
 )
 
@@ -185,7 +196,7 @@ function onKeydown(event: KeyboardEvent) {
 
 function choose(entry: ProjectEntry) {
   if (entry.archived) return
-  open.value = false
+  closeProjectPicker()
   void app.openProject(entry.directory)
 }
 
@@ -195,7 +206,7 @@ const adding = ref(false)
 /** Pick a directory and register it as a project, then open it. */
 async function addProject() {
   if (adding.value) return
-  open.value = false
+  closeProjectPicker()
   adding.value = true
   clearNotice()
   try {
@@ -217,9 +228,10 @@ async function addProject() {
         class="picker"
         :title="app.server.directory.value ? `${label} — ${app.server.directory.value}` : 'Choose a project'"
       >
+        <Folder :size="13" class="picker-folder" />
         <span class="picker-name">
           <span class="picker-label">{{ label }}</span>
-          <ShortcutBadge placement="below" modifier="alt" key-label="P" />
+          <ShortcutBadge placement="below" modifier="ctrl" key-label="R" />
         </span>
         <ChevronDown :size="13" class="picker-arrow" />
       </button>
@@ -295,8 +307,8 @@ async function addProject() {
      body, so the scoped attribute never reaches it. Every class here is prefixed
      `picker-`, so nothing else can collide with it. -->
 <style>
-/* The header's subject is the project on screen, so the switcher takes the space
-   the app name used to. */
+/* The bottom half's header names the project, so the switcher takes the row the
+   static label used to hold. */
 .picker {
   flex: 1;
   min-width: 0;
@@ -312,6 +324,10 @@ async function addProject() {
 }
 .picker:hover {
   background: var(--bg-hover);
+}
+.picker-folder {
+  flex: none;
+  color: var(--text-muted);
 }
 /* The label clips its own text; the badge below it must not be clipped with it,
    which is why the ellipsis lives on the inner span. */
@@ -334,21 +350,32 @@ async function addProject() {
   flex: none;
   color: var(--text-faint);
 }
-/* The searchable list: the header's control, opened as a panel wide enough for
-   the project paths the rows carry. */
+/* The project switcher's own dropdown: it hangs off the picker row, so it takes
+   that row's width and grows out of the corner nearest the trigger. Its height is
+   bounded by the space the window has left on the chosen side — the list scrolls
+   rather than the panel being pushed off the top edge — and the list's own cap
+   keeps the panel short enough to open below the trigger in a normal window. */
 .picker-pop {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-width: min(320px, 90vw);
+  width: var(--reka-popover-trigger-width, 240px);
+  max-width: calc(100vw - 16px);
+  max-height: var(--reka-popover-content-available-height, min(70vh, 420px));
   padding: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   outline: none;
-  animation: opencode-pop 0.12s ease;
+  transform-origin: var(--reka-popper-transform-origin, top center);
+  animation: picker-pop 0.1s ease;
+}
+@keyframes picker-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 .picker-search {
   flex: none;
@@ -390,7 +417,10 @@ async function addProject() {
 .picker-list {
   flex: 1;
   min-height: 0;
-  max-height: min(55vh, 380px);
+  /* Short enough that the whole panel fits under the trigger in a normal window,
+     so it opens downward and stays where the picker is; the available-height cap
+     on the panel takes over on a short one. */
+  max-height: min(40vh, 280px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;

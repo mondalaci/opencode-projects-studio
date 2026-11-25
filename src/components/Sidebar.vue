@@ -4,7 +4,6 @@ import { MessageSquarePlus, Search } from "lucide-vue-next"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import iconUrl from "../../build/icon.png"
 import ChatsPanel from "./ChatsPanel.vue"
-import ProjectPicker from "./ProjectPicker.vue"
 import SidebarSearch from "./SidebarSearch.vue"
 import { useApp } from "@/stores/app"
 import { clearNotice, notice } from "@/stores/notice"
@@ -23,8 +22,7 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
     <template v-else>
       <header class="head drag-region">
         <img class="logo" :src="iconUrl" alt="" />
-        <ProjectPicker />
-        <button class="icon" title="Search conversations (Alt+F)" @click="openSearch()">
+        <button class="icon search" title="Search conversations (Alt+F)" @click="openSearch()">
           <Search :size="16" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="F" />
         </button>
@@ -89,6 +87,11 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
   color: var(--text-muted);
   padding: 6px;
   border-radius: var(--radius-sm);
+}
+/* The project switcher moved to the bottom half's header, so the actions keep to
+   the right of the strip and the logo stays on the left. */
+.icon.search {
+  margin-left: auto;
 }
 .icon:hover {
   background: var(--bg-hover);

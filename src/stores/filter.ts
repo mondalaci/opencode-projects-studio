@@ -1,32 +1,29 @@
 import { ref } from "vue"
 
 /**
- * Which sidebar Ctrl+R and Ctrl+P are filtering.
+ * The source-control panel's incremental filter (Ctrl+P).
  *
- * A single value, because only one sidebar can hold the keyboard focus at a
- * time, and the filter bars are otherwise identical.
+ * Only one list filters at a time and only one panel holds the keyboard focus, so
+ * a single flag is enough: the panel mounts its bar while this is true.
  */
-export type FilterTarget = "chats" | "changes" | null
-
-const target = ref<FilterTarget>(null)
+const open = ref(false)
 
 /**
- * Bumped by every startFilter call, even when the target does not change.
+ * Bumped by every startFilter call, even when the filter is already open.
  *
- * A repeated Ctrl+R on the sidebar already being filtered leaves `target` the
- * same, so a watcher on it never fires; the bar watches this instead, which
- * lets each request re-focus and re-select its input.
+ * A repeated Ctrl+P leaves `open` true, so a watcher on it never fires; the bar
+ * watches this instead, which lets each request re-focus and re-select its input.
  */
 const request = ref(0)
 
-export const filterTarget = target
+export const filterOpen = open
 export const filterRequest = request
 
-export function startFilter(next: Exclude<FilterTarget, null>) {
-  target.value = next
+export function startFilter() {
+  open.value = true
   request.value++
 }
 
 export function stopFilter() {
-  target.value = null
+  open.value = false
 }

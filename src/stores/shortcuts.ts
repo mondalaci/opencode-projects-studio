@@ -22,7 +22,6 @@ export function setHeldModifier(value: ShortcutModifier | null) {
 
 export const openRequests = reactive({
   model: 0,
-  project: 0,
   sessions: 0,
   effort: 0,
   tools: 0,
@@ -32,7 +31,7 @@ export const openRequests = reactive({
 })
 
 export function requestOpen(
-  which: "model" | "project" | "sessions" | "effort" | "tools" | "chats" | "integrations" | "attention",
+  which: "model" | "sessions" | "effort" | "tools" | "chats" | "integrations" | "attention",
 ) {
   if (which === "model") modelProviderFilter.value = null
   openRequests[which] += 1

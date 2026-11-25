@@ -3,20 +3,18 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { ChevronRight, Eye, Folder } from "lucide-vue-next"
 import ConfirmDialog from "./ConfirmDialog.vue"
 import ConversationMenu from "./ConversationMenu.vue"
-import FilterBar from "./FilterBar.vue"
 import ProjectMenu from "./ProjectMenu.vue"
+import ProjectPicker from "./ProjectPicker.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import Spinner from "./Spinner.vue"
 import { projectDeleteAvailable } from "@/api/desktop"
 import type { SessionInfo } from "@/api/types"
 import { useApp } from "@/stores/app"
 import { requestComposerFocus } from "@/stores/draft"
-import { filterTarget, stopFilter } from "@/stores/filter"
 import type { ProjectEntry } from "@/stores/projects"
 import { useSessionState } from "@/stores/sessionState"
 import { openRequests } from "@/stores/shortcuts"
 import { relativeTime } from "@/utils/format"
-import { fuzzyMatch } from "@/utils/fuzzy"
 
 const app = useApp()
 const { entries, hiddenEntries, current } = app.projects
@@ -150,8 +148,7 @@ onBeforeUnmount(() => {
 
 /** Open a conversation from the all-projects list, switching project when needed. */
 async function openRecent(chat: SessionInfo) {
-  const opened = await openChat(chat)
-  if (opened && filtering.value) closeFilter()
+  await openChat(chat)
 }
 
 /* ------------------------------- current project ------------------------------- */
@@ -166,9 +163,6 @@ const activeProject = computed<ProjectEntry | null>(() => {
     null
   )
 })
-
-/** The name in the bottom section's header. */
-const activeName = computed(() => activeProject.value?.name ?? "No project")
 
 /** Whether the current project's conversation list is showing. */
 const projectOpen = ref(true)
@@ -421,54 +415,6 @@ function cancelRename() {
   editing.value = null
 }
 
-/* ------------------------------- chat filter (Ctrl+R) ------------------------------- */
-
-/** Incremental filter over the all-projects chats (Ctrl+R). */
-const query = ref("")
-/** Index into the filtered list that Enter opens. */
-const cursor = ref(0)
-
-const filtering = computed(() => filterTarget.value === "chats")
-
-/** Conversations matching the query: by title first, then by project name. */
-const filteredChats = computed<SessionInfo[]>(() => {
-  const raw = query.value.trim()
-  if (!raw) return recent.value
-
-  const hits: Array<{ chat: SessionInfo; score: number }> = []
-  for (const chat of recent.value) {
-    const byTitle = fuzzyMatch(raw, chat.title || "Untitled")
-    if (byTitle) {
-      hits.push({ chat, score: byTitle.score })
-      continue
-    }
-    const byProject = fuzzyMatch(raw, projectOf(chat))
-    if (byProject) hits.push({ chat, score: byProject.score - 40 })
-  }
-  hits.sort((a, b) => b.score - a.score)
-  return hits.map((hit) => hit.chat)
-})
-
-// A new query re-opens the cursor on the best match.
-watch(query, () => {
-  cursor.value = 0
-})
-
-function moveCursor(delta: number) {
-  cursor.value = Math.min(filteredChats.value.length - 1, Math.max(0, cursor.value + delta))
-}
-
-function openCursor() {
-  const chat = filteredChats.value[cursor.value]
-  if (chat) void openRecent(chat)
-  closeFilter()
-}
-
-function closeFilter() {
-  query.value = ""
-  stopFilter()
-}
-
 /* ------------------------------- list keyboard nav ------------------------------- */
 
 const listEl = ref<HTMLElement | null>(null)
@@ -486,7 +432,7 @@ function scrollNavIntoView() {
 watch(
   () => openRequests.attention,
   () => {
-    const target = filteredChats.value.find((chat) => {
+    const target = recent.value.find((chat) => {
       const state = stateFor(chat.id)
       return state === "blocked" || state === "done"
     })
@@ -499,8 +445,8 @@ watch(
 watch(
   () => openRequests.sessions,
   () => {
-    if (!filteredChats.value.length) return
-    const index = filteredChats.value.findIndex((chat) => chat.id === app.sessions.currentID.value)
+    if (!recent.value.length) return
+    const index = recent.value.findIndex((chat) => chat.id === app.sessions.currentID.value)
     navIndex.value = index >= 0 ? index : 0
     void nextTick(() => {
       listEl.value?.focus()
@@ -523,7 +469,7 @@ function endNav() {
 }
 
 function move(delta: number) {
-  navIndex.value = Math.min(filteredChats.value.length - 1, Math.max(0, navIndex.value + delta))
+  navIndex.value = Math.min(recent.value.length - 1, Math.max(0, navIndex.value + delta))
   void nextTick(scrollNavIntoView)
 }
 
@@ -545,12 +491,12 @@ function onKeydown(event: KeyboardEvent) {
       break
     case "End":
       event.preventDefault()
-      navIndex.value = filteredChats.value.length - 1
+      navIndex.value = recent.value.length - 1
       void nextTick(scrollNavIntoView)
       break
     case "Enter": {
       event.preventDefault()
-      const chat = filteredChats.value[navIndex.value]
+      const chat = recent.value[navIndex.value]
       if (chat) void openRecent(chat)
       endNav()
       break
@@ -567,27 +513,12 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div class="chats-wrap" :style="splitStyle">
-    <Transition name="filter-bar">
-      <FilterBar
-        v-if="filtering"
-        target="chats"
-        placeholder="Filter chats…"
-        :shown="filteredChats.length"
-        :total="recent.length"
-        @update:query="query = $event"
-        @move="moveCursor"
-        @open="openCursor"
-        @close="closeFilter"
-      />
-    </Transition>
-
     <!-- The top half: every project's newest conversations, newest first, each
          naming the project it belongs to. -->
     <section ref="recentEl" class="recent-section">
       <header class="section-head">
         <span class="section-label">
           All chats
-          <ShortcutBadge placement="below" modifier="ctrl" key-label="R" />
           <ShortcutBadge placement="below" modifier="alt" key-label="A" />
         </span>
         <span v-if="app.recentChats.loading.value" class="section-note"><Spinner :size="10" /> loading…</span>
@@ -596,7 +527,7 @@ function onKeydown(event: KeyboardEvent) {
 
       <div ref="listEl" class="chat-list" tabindex="-1" @keydown="onKeydown" @blur="endNav">
         <div
-          v-for="(chat, index) in filteredChats"
+          v-for="(chat, index) in recent"
           :key="chat.id"
           class="chat recent-chat"
           :class="[
@@ -604,7 +535,6 @@ function onKeydown(event: KeyboardEvent) {
             {
               current: chat.id === app.sessions.currentID.value,
               'kb-active': index === navIndex,
-              'cursor-active': filtering && index === cursor,
             },
           ]"
         >
@@ -639,9 +569,8 @@ function onKeydown(event: KeyboardEvent) {
           />
         </div>
 
-        <p v-if="!filteredChats.length" class="chats-note">
-          <template v-if="query">Nothing matches “{{ query }}”.</template>
-          <template v-else-if="app.recentChats.loading.value">Loading conversations…</template>
+        <p v-if="!recent.length" class="chats-note">
+          <template v-if="app.recentChats.loading.value">Loading conversations…</template>
           <template v-else>No conversations yet.</template>
         </p>
       </div>
@@ -666,7 +595,9 @@ function onKeydown(event: KeyboardEvent) {
       @keydown="onSplitKey"
     />
 
-    <!-- The bottom half: only the open project's own conversations. -->
+    <!-- The bottom half: only the open project's own conversations. Its header
+         names the project and is the switcher — Ctrl+R (or Alt+P) opens the
+         searchable project list from here. -->
     <section ref="projectEl" class="project-section" :class="{ collapsed: !projectOpen }">
       <header class="project-head">
         <button
@@ -676,15 +607,14 @@ function onKeydown(event: KeyboardEvent) {
           @click="projectOpen = !projectOpen"
         >
           <ChevronRight :size="13" class="project-chevron" :class="{ open: projectOpen }" />
-          <Folder :size="13" class="folder" />
-          <span class="project-name" :title="activeProject?.directory">{{ activeName }}</span>
-          <span
-            v-if="activeProject?.archived"
-            class="archived-badge"
-            title="Archived — this project's folder no longer exists"
-          >archived</span>
-          <span v-if="projectChats.length" class="project-count" :title="`${projectChats.length} conversations loaded`">{{ projectChats.length }}</span>
         </button>
+        <ProjectPicker />
+        <span
+          v-if="activeProject?.archived"
+          class="archived-badge"
+          title="Archived — this project's folder no longer exists"
+        >archived</span>
+        <span v-if="projectChats.length" class="project-count" :title="`${projectChats.length} conversations loaded`">{{ projectChats.length }}</span>
         <ShortcutBadge v-if="activeProject" modifier="alt" key-label="L" />
         <ProjectMenu
           v-if="activeProject"
@@ -736,7 +666,7 @@ function onKeydown(event: KeyboardEvent) {
 
     <!-- Hidden projects keep their place without taking one: the section lists
          them so a row can be brought back or deleted for good. -->
-    <section v-if="hiddenEntries.length && !query" class="hidden-section">
+    <section v-if="hiddenEntries.length" class="hidden-section">
       <button class="hidden-head" :aria-expanded="hiddenOpen" @click="hiddenOpen = !hiddenOpen">
         <ChevronRight :size="13" class="hidden-chevron" :class="{ open: hiddenOpen }" />
         <Eye :size="12" />
@@ -910,9 +840,6 @@ function onKeydown(event: KeyboardEvent) {
 .chat.kb-active {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
-.chat.cursor-active {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-}
 /* A row is its state dot beside its text, the dot centred on the whole row
    rather than sitting on the first line of a two-line one. */
 .chat-hit {
@@ -992,10 +919,9 @@ function onKeydown(event: KeyboardEvent) {
   background: var(--fill-ink);
   animation: none;
 }
-/* The cursor and the keyboard marker outline the row in ink, since their accent
-   tints would fight the fill. The ring goes on the fill layer, which is the only
-   thing above the row's own background. */
-.chat.filled.cursor-active::before,
+/* The keyboard marker outlines the row in ink, since its accent tint would
+   fight the fill. The ring goes on the fill layer, which is the only thing above
+   the row's own background. */
 .chat.filled.kb-active::before {
   box-shadow: inset 0 0 0 2px var(--fill-ink);
 }
@@ -1070,9 +996,12 @@ function onKeydown(event: KeyboardEvent) {
   font-size: 11.5px;
   color: var(--text-faint);
 }
-/* The bottom half's own header: the open project, and the actions on it. */
+/* The bottom half's own header: the project switcher, and the actions on the
+   open project. It sits above the list so the switcher's key badge can hang
+   past the row. */
 .project-head {
   position: relative;
+  z-index: 1;
   flex: none;
   display: flex;
   align-items: center;
@@ -1080,12 +1009,11 @@ function onKeydown(event: KeyboardEvent) {
   padding: 2px 8px 2px 0;
 }
 .project-toggle {
-  flex: 1;
-  min-width: 0;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 9px;
+  padding: 5px 4px 5px 9px;
   border: none;
   background: transparent;
   border-radius: var(--radius-sm);
@@ -1105,16 +1033,6 @@ function onKeydown(event: KeyboardEvent) {
 .folder {
   flex: none;
   color: var(--text-muted);
-}
-.project-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* The project's loaded conversation tally, between the name and the menu. */
 .project-count {

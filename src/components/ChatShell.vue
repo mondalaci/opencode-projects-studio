@@ -20,6 +20,7 @@ import { useGit } from "@/stores/git"
 import { useTray } from "@/stores/tray"
 import { attachments, draft, requestComposerFocus } from "@/stores/draft"
 import { openRequests, requestOpen, requestPromptStep, setHeldModifier, shortcutKeys, togglePronunciation } from "@/stores/shortcuts"
+import { openProjectPicker, toggleProjectPicker } from "@/stores/projectPicker"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
 import { applyScmWidth, scmWidth, setScmWidth } from "@/stores/layout"
@@ -252,10 +253,11 @@ function onKeyDown(event: KeyboardEvent) {
     return
   }
 
-  // The incremental searches use the familiar editor bindings: Ctrl+R filters
-  // the chat list, Ctrl+P the source-control list. Chromium's own Ctrl+R
-  // reload and Ctrl+P print are not wanted here, and with no application menu
-  // there is no accelerator keeping them alive.
+  // The incremental filter uses the familiar editor binding: Ctrl+P narrows the
+  // source-control list. Chromium's own Ctrl+P print is not wanted here, and with
+  // no application menu there is no accelerator keeping it alive. Ctrl+R — the
+  // browser's reload — opens the project switcher at the top of the bottom
+  // sidebar section instead.
   if ((event.ctrlKey || event.metaKey) && !event.altKey) {
     // Ctrl+F finds within the open conversation, the browser's own binding.
     // The conversation search across sessions stays on Alt+F.
@@ -285,12 +287,14 @@ function onKeyDown(event: KeyboardEvent) {
     }
     if (event.code === "KeyR") {
       event.preventDefault()
-      startFilter("chats")
+      // The switcher lives in the chat sidebar, which the conversation search
+      // replaces; with that page up the key has nothing to open.
+      if (!searchOpen.value) openProjectPicker()
       return
     }
     if (event.code === "KeyP") {
       event.preventDefault()
-      startFilter("changes")
+      startFilter()
       return
     }
   }
@@ -303,7 +307,7 @@ function onKeyDown(event: KeyboardEvent) {
       break
     case shortcutKeys.project:
       event.preventDefault()
-      requestOpen("project")
+      if (!searchOpen.value) toggleProjectPicker()
       break
     case shortcutKeys.attention:
       event.preventDefault()

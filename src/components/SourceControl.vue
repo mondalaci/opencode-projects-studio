@@ -4,7 +4,7 @@ import { ArrowUp, LogOut, Minus, Plus } from "lucide-vue-next"
 import FilterBar from "./FilterBar.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import WindowControls from "./WindowControls.vue"
-import { filterTarget, stopFilter } from "@/stores/filter"
+import { filterOpen, stopFilter } from "@/stores/filter"
 import { useApp } from "@/stores/app"
 import { useGit, type GitRow } from "@/stores/git"
 import { useServer } from "@/stores/server"
@@ -18,7 +18,6 @@ const { locationInfo } = useServer()
 
 /** Incremental filter over the changed files (Ctrl+P). */
 const query = ref("")
-const filtering = computed(() => filterTarget.value === "changes")
 /** Index into the file list that Enter opens. */
 const cursor = ref(0)
 
@@ -78,9 +77,9 @@ let previewing = false
  * Escape restore the conversation.
  */
 watch(
-  [filtering, () => cursor.value, fileOrder],
+  [filterOpen, () => cursor.value, fileOrder],
   () => {
-    if (!filtering.value) {
+    if (!filterOpen.value) {
       if (previewing && !keepPreview) git.closeDiff()
       previewing = false
       keepPreview = false
@@ -97,7 +96,7 @@ watch(
 /** Whether a file row is the one the filter cursor points at. */
 function isCursor(row: GitRow) {
   const target = fileOrder.value[cursor.value]
-  return Boolean(filtering.value && target && target.path === row.path && target.scope === row.scope)
+  return Boolean(filterOpen.value && target && target.path === row.path && target.scope === row.scope)
 }
 
 /** Where diffs are read from: the repository root, or the project folder. */
@@ -181,8 +180,7 @@ function parts(path: string) {
 
     <Transition name="filter-bar">
       <FilterBar
-        v-if="filtering && (stagedRows.length || changeRows.length)"
-        target="changes"
+        v-if="filterOpen && (stagedRows.length || changeRows.length)"
         placeholder="Filter changed files…"
         :shown="stagedFiltered.length + changeFiltered.length"
         :total="total"
@@ -248,7 +246,7 @@ function parts(path: string) {
       </section>
 
       <p v-if="!total && !loading" class="empty">No uncommitted changes.</p>
-      <p v-else-if="filtering && !fileOrder.length" class="empty">Nothing matches “{{ query }}”.</p>
+      <p v-else-if="filterOpen && !fileOrder.length" class="empty">Nothing matches “{{ query }}”.</p>
     </div>
 
     <footer class="scm-foot">

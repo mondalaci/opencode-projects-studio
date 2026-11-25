@@ -21,9 +21,9 @@ conversations:
   The bottom half lists only the open project's own conversations (the newest 50),
   under that project's name. The divider between them drags to give either half
   more room (double-click evens them out, or focus it and use the arrows), and the
-  share is remembered. The open project is chosen from the **project switcher** in
-  the sidebar header (`Alt`+`P`), which searches projects as it is typed and also
-  holds **Add project**; its `⋯` menu on the bottom
+  share is remembered. The open project is chosen from the **project switcher** at
+  the top of the bottom half (`Ctrl`+`R`, or `Alt`+`P`), which searches projects as
+  it is typed and also holds **Add project**; its `⋯` menu on the bottom
   half's header hides or deletes it (behind a confirmation), and a **Hidden**
   section folds away under the split to bring one back. Every conversation's own
   `⋯` menu renames it or deletes it for good, also behind a confirmation.
@@ -193,16 +193,18 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   stores/sessionState.ts   Visible conversation set per project, the tray state and the unread marks
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
   stores/find.ts     Find-in-conversation state (Ctrl+F)
+  stores/filter.ts   The source-control filter's open state (Ctrl+P)
+  stores/projectPicker.ts  The project switcher's open state (Ctrl+R, Alt+P)
   components/
     ChatsPanel.vue        The split sidebar: all projects' chats above, the open project's chats below
-    ProjectPicker.vue     The header's project switcher, and the Add project entry
+    ProjectPicker.vue     The bottom half's project switcher, and the Add project entry
     ProjectMenu.vue       Hide / unhide / delete actions of one project
     ConversationMenu.vue  Rename / delete actions of one conversation row
     ConfirmDialog.vue     Modal confirmation before a project or conversation is deleted
     SourceControl.vue     Right-hand source-control panel (flat, full paths)
     DiffViewer.vue        Split/unified diff view
     FileViewer.vue        Read-only file view
-    FilterBar.vue         The in-place sidebar filters (Ctrl+R, Ctrl+P)
+    FilterBar.vue         The in-place source-control filter (Ctrl+P)
     FindBar.vue           Browser-style find bar over the open conversation (Ctrl+F)
     WindowControls.vue    Minimize / maximize / close for the frameless window
     WindowResizeHandles.vue  Edge grips, since a frameless window has no border
@@ -438,18 +440,18 @@ opened, which is what refetched the session.
 ## Keyboard shortcuts
 
 Hold `Alt` or `Ctrl` to reveal the key badges on the controls they trigger. The
-two are separate layers — `Alt` carries the actions, `Ctrl` the filters and the
-two walk-the-list pairs — and each badge names its own modifier, so a letter
-never appears next to the wrong one.
+two are separate layers — `Alt` carries the actions, `Ctrl` the filters, the
+project switcher and the two walk-the-list pairs — and each badge names its own
+modifier, so a letter never appears next to the wrong one.
 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl`+`F` | Find in the open conversation (browser-style find bar) |
-| `Ctrl`+`R` | Filter the all-projects chat list in place |
+| `Ctrl`+`R` | Open the searchable project switcher at the top of the bottom half |
 | `Ctrl`+`P` | Filter the changed files in the source-control panel in place |
 | `Ctrl`+`↑` / `Ctrl`+`↓` | Switch to the previous / next conversation in the open project |
 | `Ctrl`+`PageUp` / `Ctrl`+`PageDown` | Switch to the previous / next conversation in the all-projects list |
-| `Alt`+`P` | Open the searchable project switcher |
+| `Alt`+`P` | Open the searchable project switcher (as `Ctrl`+`R` does) |
 | `Alt`+`A` | Jump to the first conversation that needs you (blocked or unread finish) |
 | `Alt`+`S` | Focus the all-projects chat list (arrow keys + `Enter`) |
 | `Alt`+`L` | Fold the open project's conversation list away and back |
@@ -461,12 +463,11 @@ never appears next to the wrong one.
 | `Alt`+`↑` / `Alt`+`↓` | Jump to your previous / next message in the conversation |
 | `Esc` | Close the open diff or search page, or clear a sidebar filter (ending a Ctrl+P preview) |
 
-The two filters narrow their list as you type (subsequences work: `kwchat` finds
-`kilo-web-chat`), `↑`/`↓` move the selection, `Enter` opens it and `Esc` clears
-it. The chats filter matches a conversation's title first and its project's name
-second, so typing `uhk` lists the UHK projects' conversations. `Ctrl`+`R` and
-`Ctrl`+`P` are Chromium's reload and print by default; both are taken over here,
-which is what the app's own shortcuts require.
+The source-control filter narrows its list as you type (subsequences work: `kwchat`
+finds `kilo-web-chat`), `↑`/`↓` move the selection, `Enter` opens it and `Esc`
+clears it. `Ctrl`+`R` and `Ctrl`+`P` are Chromium's reload and print by default;
+both are taken over here — the reload key opens the project switcher, the print key
+the source-control filter — which is what the app's own shortcuts require.
 
 `Ctrl`+`F` opens a find bar over the open conversation and highlights every match
 in it, painting the active one in the solid accent colour. `Enter` and `Shift`+`Enter`
