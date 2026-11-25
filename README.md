@@ -394,6 +394,11 @@ is the one that shouts — and Electron runs with
 `autoplayPolicy: "no-user-gesture-required"` so they can sound without a click
 first.
 
+The audio context is rebuilt after a system resume or an audio device change: a
+USB headset that is re-enumerated on wake leaves the old context silent even
+though it still reports running. The tray's **Test sound** item plays the chime
+on demand, so the audio can be checked without waiting for a conversation.
+
 ### How the state feed works
 
 One global event stream (`GET /api/event`) carries the events of *every* project,

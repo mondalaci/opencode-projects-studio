@@ -137,7 +137,7 @@ export interface TrayMenuItem {
   /** Clicking this entry opens this http(s) URL, for a conversation the browser owns. */
   url?: string
   /** Built-in action for the fixed entries at the bottom of the menu. */
-  action?: "open" | "mute" | "quit"
+  action?: "open" | "mute" | "quit" | "test"
   submenu?: TrayMenuItem[]
 }
 
@@ -160,7 +160,7 @@ export interface DesktopTrayApi {
   notify(payload: { title: string; body: string; sessionID?: string; url?: string }): Promise<void>
   /** Tray clicks that only the main process can turn into window actions. */
   onFocusSession(listener: (sessionID: string) => void): () => void
-  onAction(listener: (action: "open" | "mute") => void): () => void
+  onAction(listener: (action: "open" | "mute" | "test") => void): () => void
 }
 
 /** Workspace files, for the incremental file search. */
@@ -258,6 +258,16 @@ export interface DesktopWebChatApi {
   onStatus(listener: (picture: WebChatPicture) => void): () => void
 }
 
+/**
+ * Audio lifecycle. The main process knows when the system has resumed, which a
+ * long-lived AudioContext cannot survive on its own, so it tells the renderer to
+ * rebuild the chime's context.
+ */
+export interface DesktopAudioApi {
+  /** Subscribe to "the system resumed"; returns an unsubscribe function. */
+  onReset(listener: () => void): () => void
+}
+
 /** A point in the same DIP space as window bounds. */
 export interface ScreenPoint {
   x: number
@@ -300,6 +310,7 @@ export interface DesktopBridge {
   opencode: DesktopOpencodeApi
   tray: DesktopTrayApi
   webchat: DesktopWebChatApi
+  audio: DesktopAudioApi
   shell: {
     reveal(target: string): Promise<void>
     openExternal(url: string): Promise<void>

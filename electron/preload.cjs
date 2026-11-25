@@ -117,6 +117,19 @@ const webchatApi = {
   },
 }
 
+/**
+ * Audio lifecycle: the main process tells the renderer when the system has
+ * resumed, because a long-lived AudioContext does not survive it. The renderer
+ * rebuilds its chime context in response.
+ */
+const audioApi = {
+  onReset: (listener) => {
+    const wrapped = () => listener()
+    ipcRenderer.on("audio:reset", wrapped)
+    return () => ipcRenderer.removeListener("audio:reset", wrapped)
+  },
+}
+
 contextBridge.exposeInMainWorld("opencodeDesktop", {
   desktop: true,
   platform: process.platform,
@@ -127,6 +140,7 @@ contextBridge.exposeInMainWorld("opencodeDesktop", {
   opencode: opencodeApi,
   tray: trayApi,
   webchat: webchatApi,
+  audio: audioApi,
   shell: shellApi,
   window: windowApi,
 })

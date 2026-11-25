@@ -64,6 +64,12 @@ function createTrayManager({ iconPath, getWindow }) {
             const window = getWindow()
             if (window && !window.isDestroyed()) window.webContents.send("tray:action", "mute")
           }
+        } else if (item.action === "test") {
+          // The renderer owns the audio context, so the test chime plays there.
+          entry.click = () => {
+            const window = getWindow()
+            if (window && !window.isDestroyed()) window.webContents.send("tray:action", "test")
+          }
         } else if (item.action === "quit") {
           entry.click = () => app.quit()
         }

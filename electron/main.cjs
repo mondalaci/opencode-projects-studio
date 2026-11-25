@@ -29,7 +29,7 @@ if (!electron?.app) {
   process.exit(1)
 }
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell } = electron
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell } = electron
 
 const ROOT = path.join(__dirname, "..")
 const DIST = path.join(ROOT, "dist")
@@ -447,6 +447,15 @@ if (!app.requestSingleInstanceLock() && !CAPTURE_PATH) {
 
   app.whenReady().then(async () => {
     setupMenu()
+
+    // A long-lived AudioContext does not survive a system resume: the audio
+    // device is re-enumerated underneath it, and the renderer's chime goes
+    // silent while still reporting "running". Tell the renderer to rebuild it.
+    powerMonitor.on("resume", () => {
+      for (const target of BrowserWindow.getAllWindows()) {
+        if (!target.isDestroyed()) target.webContents.send("audio:reset")
+      }
+    })
 
     // The web chat app reports here, and the renderer decides what its dot looks
     // like, so the two are joined by a push in one direction and a pull in the

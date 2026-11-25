@@ -14,13 +14,39 @@
  * Electron is configured with `autoplayPolicy: "no-user-gesture-required"`, so
  * the context may start without a click; if a platform still refuses, the context
  * stays suspended and the next interaction resumes it.
+ *
+ * The context is rebuilt when the system resumes or the audio device set changes:
+ * a long-lived context keeps its output stream on the device instance it was
+ * created against, so a USB headset that is re-enumerated after a suspend leaves
+ * it silent even though it still reports "running".
  */
 
 let context: AudioContext | null = null
+/** Whether the device-change listener is already installed. */
+let watchingDevices = false
+
+/**
+ * Drop the shared context, so the next chime builds a fresh one.
+ *
+ * A long-lived AudioContext does not survive a system resume or a USB audio
+ * device being re-enumerated: its output stream stays bound to the device
+ * instance that went away, and the context can keep reporting "running" while
+ * producing silence. Recreating it is the only reliable way back, so the app
+ * calls this after a resume and whenever the device set changes.
+ */
+export function resetAudio() {
+  const ctx = context
+  context = null
+  if (!ctx) return
+  // Close without letting the statechange handler re-enter this function.
+  ctx.onstatechange = null
+  void ctx.close().catch(() => undefined)
+}
 
 /** Lazily create the shared audio context. */
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null
+  if (context?.state === "closed") resetAudio()
   if (!context) {
     const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctor) return null
@@ -28,6 +54,11 @@ function audio(): AudioContext | null {
       context = new Ctor()
     } catch {
       return null
+    }
+    // A context that closes itself (the audio service went away) must not be
+    // reused: the next chime would silently schedule into nothing.
+    context.onstatechange = () => {
+      if (context?.state === "closed") resetAudio()
     }
   }
   if (context.state === "suspended") void context.resume().catch(() => undefined)
@@ -40,14 +71,24 @@ function audio(): AudioContext | null {
  */
 export function prepareAudio() {
   const ctx = audio()
-  if (!ctx || ctx.state !== "suspended") return
-  const unlock = () => {
-    void ctx.resume().catch(() => undefined)
-    window.removeEventListener("pointerdown", unlock)
-    window.removeEventListener("keydown", unlock)
+  if (ctx && ctx.state === "suspended") {
+    const unlock = () => {
+      void ctx.resume().catch(() => undefined)
+      window.removeEventListener("pointerdown", unlock)
+      window.removeEventListener("keydown", unlock)
+    }
+    window.addEventListener("pointerdown", unlock, { once: true })
+    window.addEventListener("keydown", unlock, { once: true })
   }
-  window.addEventListener("pointerdown", unlock, { once: true })
-  window.addEventListener("keydown", unlock, { once: true })
+
+  // A USB headset that is re-enumerated after a resume leaves the old context
+  // bound to a device that no longer exists. Rebuild it when the device set
+  // changes, so the next chime is not swallowed.
+  const devices = typeof navigator === "undefined" ? undefined : navigator.mediaDevices
+  if (!watchingDevices && typeof devices?.addEventListener === "function") {
+    watchingDevices = true
+    devices.addEventListener("devicechange", resetAudio)
+  }
 }
 
 /** One note of a figure. */
@@ -114,7 +155,12 @@ function question(ctx: AudioContext, now: number) {
 
 /** Start a figure just far enough ahead that scheduling is never late. */
 function play(ctx: AudioContext, figure: (ctx: AudioContext, now: number) => void) {
-  figure(ctx, ctx.currentTime + 0.02)
+  try {
+    figure(ctx, ctx.currentTime + 0.02)
+  } catch {
+    // The context closed underneath the figure. The next chime rebuilds it.
+    resetAudio()
+  }
 }
 
 /**
@@ -127,6 +173,18 @@ function start(figure: (ctx: AudioContext, now: number) => void): boolean {
   if (!ctx) return false
   if (ctx.state === "suspended") {
     void ctx.resume().then(() => play(ctx, figure)).catch(() => undefined)
+    return true
+  }
+  if (ctx.state !== "running") {
+    // "closed" or "interrupted": this context cannot sound, so build a new one.
+    resetAudio()
+    const fresh = audio()
+    if (!fresh) return false
+    if (fresh.state === "suspended") {
+      void fresh.resume().then(() => play(fresh, figure)).catch(() => undefined)
+      return true
+    }
+    play(fresh, figure)
     return true
   }
   play(ctx, figure)

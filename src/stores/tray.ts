@@ -2,7 +2,7 @@ import { computed, ref, watch } from "vue"
 import { desktopBridge, type TrayMenuItem } from "@/api/desktop"
 import { useSessionState } from "./sessionState"
 import { useWebChat, type WebChatEntry } from "./webchat"
-import { playAttentionChime, playQuestionChime, prepareAudio } from "@/utils/chime"
+import { playAttentionChime, playQuestionChime, prepareAudio, resetAudio } from "@/utils/chime"
 import { trayIconDataURL } from "@/utils/trayIcon"
 import {
   QUESTION_REASON,
@@ -161,6 +161,7 @@ export function useTray() {
       { type: "separator" },
       { label: "Open OpenCode Projects Studio", action: "open" },
       { label: muted.value ? "Unmute notifications" : "Mute notifications", action: "mute" },
+      { label: "Test sound", action: "test" },
       { type: "separator" },
       { label: "Quit", action: "quit" },
     )
@@ -299,6 +300,10 @@ export function useTray() {
     // Unlock audio on the first interaction, for platforms that insist on one.
     prepareAudio()
 
+    // A system resume re-enumerates the audio device; the long-lived context
+    // cannot follow it, so rebuild it before the next chime.
+    bridge?.audio?.onReset(() => resetAudio())
+
     // The web chat app's tabs report into the main process, which sends the
     // picture here; every change to it moves the signature above.
     webchat.start()
@@ -314,6 +319,9 @@ export function useTray() {
 
     bridge?.tray?.onAction((action) => {
       if (action === "mute") toggleMute()
+      // A test from the tray: play the chime directly, so the user can check
+      // audio without waiting for a conversation to change.
+      if (action === "test") playAttentionChime()
     })
 
     bridge?.tray?.onFocusSession((sessionID) => {
