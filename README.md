@@ -17,7 +17,10 @@ conversations:
   the chat's own subject, with the state dot centred on the two lines and the
   relative time staying readable while the pointer is on the row (the actions
   button steps in beside it rather than over it); it is one bounded request from
-  the start, not a pass over each project's history.
+  the start, not a pass over each project's history. A conversation that becomes
+  fresher while the list is on screen — a finished turn, an answered block — moves
+  to the top with its neighbours: the rows travel to their new places instead of
+  snapping, so the reorder is something the eye can follow.
   The bottom half lists only the open project's own conversations (the newest 50),
   under that project's name. The divider between them drags to give either half
   more room (double-click evens them out, or focus it and use the arrows), and the

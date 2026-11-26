@@ -526,48 +526,54 @@ function onKeydown(event: KeyboardEvent) {
       </header>
 
       <div ref="listEl" class="chat-list" tabindex="-1" @keydown="onKeydown" @blur="endNav">
-        <div
-          v-for="(chat, index) in recent"
-          :key="chat.id"
-          class="chat recent-chat"
-          :class="[
-            rowFill(chat.id),
-            {
-              current: chat.id === app.sessions.currentID.value,
-              'kb-active': index === navIndex,
-            },
-          ]"
-        >
-          <button class="chat-hit" @click="openRecent(chat)">
-            <span class="state-dot" :class="stateFor(chat.id)" :title="reasonFor(chat.id)"></span>
-            <span class="chat-lines">
-              <span class="chat-line">
-                <span class="chat-project" :title="directoryOf(chat)">
-                  <span class="chat-project-name">{{ projectOf(chat) }}</span>
+        <!-- A conversation whose turn just ended moves to the top of a list that
+             is on screen. The group lets the rows travel to their new places
+             instead of teleporting: it records every row's place before the
+             patch and transitions the difference away afterwards. -->
+        <TransitionGroup name="chat">
+          <div
+            v-for="(chat, index) in recent"
+            :key="chat.id"
+            class="chat recent-chat"
+            :class="[
+              rowFill(chat.id),
+              {
+                current: chat.id === app.sessions.currentID.value,
+                'kb-active': index === navIndex,
+              },
+            ]"
+          >
+            <button class="chat-hit" @click="openRecent(chat)">
+              <span class="state-dot" :class="stateFor(chat.id)" :title="reasonFor(chat.id)"></span>
+              <span class="chat-lines">
+                <span class="chat-line">
+                  <span class="chat-project" :title="directoryOf(chat)">
+                    <span class="chat-project-name">{{ projectOf(chat) }}</span>
+                  </span>
+                  <span class="chat-time">{{ relativeTime(chatTime(chat)) }}</span>
                 </span>
-                <span class="chat-time">{{ relativeTime(chatTime(chat)) }}</span>
+                <span class="chat-line subject">
+                  <input
+                    v-if="isEditing(chat.id)"
+                    :ref="setRenameInput"
+                    v-model="editTitle"
+                    class="rename"
+                    @click.stop
+                    @keydown.enter.prevent="commitRename"
+                    @keydown.esc.prevent="cancelRename"
+                    @blur="commitRename"
+                  />
+                  <span v-else class="chat-title">{{ chat.title || "Untitled" }}</span>
+                </span>
               </span>
-              <span class="chat-line subject">
-                <input
-                  v-if="isEditing(chat.id)"
-                  :ref="setRenameInput"
-                  v-model="editTitle"
-                  class="rename"
-                  @click.stop
-                  @keydown.enter.prevent="commitRename"
-                  @keydown.esc.prevent="cancelRename"
-                  @blur="commitRename"
-                />
-                <span v-else class="chat-title">{{ chat.title || "Untitled" }}</span>
-              </span>
-            </span>
-          </button>
-          <ConversationMenu
-            v-if="!isEditing(chat.id)"
-            @rename="startRename(chat)"
-            @delete="askDeleteChat(chat)"
-          />
-        </div>
+            </button>
+            <ConversationMenu
+              v-if="!isEditing(chat.id)"
+              @rename="startRename(chat)"
+              @delete="askDeleteChat(chat)"
+            />
+          </div>
+        </TransitionGroup>
 
         <p v-if="!recent.length" class="chats-note">
           <template v-if="app.recentChats.loading.value">Loading conversations…</template>
@@ -626,37 +632,39 @@ function onKeydown(event: KeyboardEvent) {
       </header>
 
       <div v-if="projectOpen" class="chat-list">
-        <div
-          v-for="chat in projectChats"
-          :key="chat.id"
-          class="chat"
-          :class="{ current: chat.id === app.sessions.currentID.value }"
-        >
-          <button class="chat-hit" @click="openProjectChat(chat)">
-            <span class="chat-line">
-              <span class="state-dot" :class="stateFor(chat.id)" :title="reasonFor(chat.id)"></span>
-              <input
-                v-if="isEditing(chat.id)"
-                :ref="setRenameInput"
-                v-model="editTitle"
-                class="rename"
-                @click.stop
-                @keydown.enter.prevent="commitRename"
-                @keydown.esc.prevent="cancelRename"
-                @blur="commitRename"
-              />
-              <span v-else class="chat-title">{{ chat.title || "Untitled" }}</span>
-              <span class="chat-time">{{ relativeTime(chatTime(chat)) }}</span>
-            </span>
-          </button>
-          <!-- Each chat carries its own actions, so the menu can never act on a
-               different conversation than the row it was opened from. -->
-          <ConversationMenu
-            v-if="!isEditing(chat.id)"
-            @rename="startRename(chat)"
-            @delete="askDeleteChat(chat)"
-          />
-        </div>
+        <TransitionGroup name="chat">
+          <div
+            v-for="chat in projectChats"
+            :key="chat.id"
+            class="chat"
+            :class="{ current: chat.id === app.sessions.currentID.value }"
+          >
+            <button class="chat-hit" @click="openProjectChat(chat)">
+              <span class="chat-line">
+                <span class="state-dot" :class="stateFor(chat.id)" :title="reasonFor(chat.id)"></span>
+                <input
+                  v-if="isEditing(chat.id)"
+                  :ref="setRenameInput"
+                  v-model="editTitle"
+                  class="rename"
+                  @click.stop
+                  @keydown.enter.prevent="commitRename"
+                  @keydown.esc.prevent="cancelRename"
+                  @blur="commitRename"
+                />
+                <span v-else class="chat-title">{{ chat.title || "Untitled" }}</span>
+                <span class="chat-time">{{ relativeTime(chatTime(chat)) }}</span>
+              </span>
+            </button>
+            <!-- Each chat carries its own actions, so the menu can never act on a
+                 different conversation than the row it was opened from. -->
+            <ConversationMenu
+              v-if="!isEditing(chat.id)"
+              @rename="startRename(chat)"
+              @delete="askDeleteChat(chat)"
+            />
+          </div>
+        </TransitionGroup>
 
         <p v-if="!projectChats.length" class="chats-note">
           {{ current ? "No conversations yet." : "No project open." }}
@@ -838,6 +846,17 @@ function onKeydown(event: KeyboardEvent) {
 }
 .chat:hover {
   background: var(--bg-hover);
+}
+/* A row that changes place — a conversation that just got fresher, or one that
+   the removal of a neighbour pulled up — travels there instead of teleporting.
+   Vue records every row's place before the patch and transitions the difference
+   away afterwards (the `-move` class); the lift keeps the travelling row above
+   the ones it passes, and the list's own colour hides the row it is passing, so
+   the two titles never mix. */
+.chat-move {
+  background: var(--bg-sidebar);
+  transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.1, 1);
+  z-index: 1;
 }
 .chat.kb-active {
   box-shadow: inset 0 0 0 2px var(--accent);
