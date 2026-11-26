@@ -68,9 +68,12 @@ function projectOf(chat: SessionInfo): string {
  * background — the dot says all there is to say about those, and a wall of
  * tinted working rows would shout about nothing new.
  *
- * A fill that has just ended (the conversation was opened, or its block was
- * answered) keeps its colour for a moment and cools down, so the eye can follow
- * what stopped needing attention instead of seeing it vanish.
+ * A fill that has just ended because nothing needs attention any more (the
+ * conversation was opened, or its block was answered and the turn stopped)
+ * keeps its colour for a moment and cools down, so the eye can follow what
+ * stopped needing attention instead of seeing it vanish. A conversation that
+ * goes straight back to work skips that: the orange working dot is the answer
+ * then, and a red or green sweep over a running turn would say the opposite.
  */
 function rowFill(sessionID: string): string | undefined {
   const state = stateFor(sessionID)
@@ -124,8 +127,12 @@ function stopCooling(sessionID: string) {
 /** The state each listed conversation had on the previous pass. */
 const lastStates = new Map<string, string>()
 
-// A row that was filled and is not any more starts its cooldown. The list is the
-// unfiltered one, so a row that the filter is hiding still cools down unseen.
+// A row that was filled and is not any more starts its cooldown - unless the
+// conversation went straight back to work. The orange working dot is the answer
+// then, so the fill drops at once instead of sweeping away over the turn it is
+// already reporting; a cooldown a new turn interrupts is cut short the same way.
+// The list is the unfiltered one, so a row that the filter is hiding still
+// cools down unseen.
 watch(
   () => recent.value.map((chat) => [chat.id, stateFor(chat.id)] as const),
   (list) => {
@@ -135,7 +142,7 @@ watch(
       if (!previous) continue
       const wasFilled = previous === "blocked" || previous === "done"
       const isFilled = state === "blocked" || state === "done"
-      if (isFilled) stopCooling(id)
+      if (isFilled || state === "working") stopCooling(id)
       else if (wasFilled) startCooling(id, previous)
     }
   },
@@ -943,9 +950,11 @@ function onKeydown(event: KeyboardEvent) {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 /* The cooldown: a tint that has just ended — the conversation was opened, or its
-   block was answered — shrinks away to the right over six seconds. A sweep
-   instead of a fade, because a fading colour passes through muddy mixes on the
-   way out; this one just gets narrower until the row is its old self again. */
+   block was answered and the turn stopped — shrinks away to the right over six
+   seconds. A conversation that goes back to work skips it, so the sweep never
+   plays over a running turn. A sweep instead of a fade, because a fading colour
+   passes through muddy mixes on the way out; this one just gets narrower until
+   the row is its old self again. */
 .chat.filled.cooling::before {
   clip-path: inset(0 0 0 100%);
   transition: clip-path 6s linear;

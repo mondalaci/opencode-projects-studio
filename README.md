@@ -52,8 +52,10 @@ conversations:
   without reading the dots; working and idle keep the list background. The tint is
   a wash rather than a solid fill, so the text stays in the theme's own ink and one
   blocked row does not drown the list around it. A fill that has just ended (the
-  conversation was opened, or its block was answered) does not blink out: it
-  shrinks away to the right over six seconds.
+  conversation was opened, or its block was answered and the turn stopped) does
+  not blink out: it shrinks away to the right over six seconds. A conversation
+  that goes straight back to work drops the tint at once and shows its pulsing
+  amber dot instead, so a red or green sweep never plays over a running turn.
 - **The open conversation** — in either half of the sidebar, the conversation on
   screen is the only row with a ring around it. A filled row would have to fight
   the red and green state tints for the same ground, so the ring sits on top of
