@@ -40,7 +40,10 @@ conversations:
   whole file on both sides, split or unified, with line numbers, syntax
   highlighting, `+n −m` statistics, a change map down the right edge and change
   bars in the gutter. Clicking an image in a conversation enlarges it to the
-  window, and clicking again returns it.
+  window, fitted; the `1:1` button (or `1`) shows one image pixel per screen
+  pixel — the display's own scaling is divided out —
+  where a click on the image no longer closes the overlay and dragging pans it.
+  Clicking the ground around it, or Escape, returns to the conversation.
 - **Conversation state dots** — every listed conversation carries a dot: red
   blocked, amber working, green done and not yet opened, grey idle. A project's
   own state is the most actionable of its conversations. In the all-projects half
@@ -217,7 +220,7 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
     FindBar.vue           Browser-style find bar over the open conversation (Ctrl+F)
     WindowControls.vue    Minimize / maximize / close for the frameless window
     WindowResizeHandles.vue  Edge grips, since a frameless window has no border
-    ImageLightbox.vue     A conversation image, enlarged to the window
+    ImageLightbox.vue     A conversation image, fitted or at 1:1
     DiffOverview.vue      The diff's change map
   utils/diff.ts      Unified-diff parsing and split-view alignment
   utils/fuzzy.ts     Subsequence matching for the incremental filters
