@@ -6,6 +6,7 @@
  * bounded directory walk stands in, skipping the usual noise directories.
  */
 const fs = require("node:fs/promises")
+const os = require("node:os")
 const path = require("node:path")
 
 const { git, repoInfo } = require("./git.cjs")
@@ -166,6 +167,21 @@ async function read(dir, relative) {
 }
 
 /**
+ * A path with a leading `~` taken from this machine's home directory.
+ *
+ * A reply that names an artifact writes `~/.local/share/opencode/artifacts/…`
+ * often enough that requiring the spelled-out `/home/laci` is a papercut. Home
+ * is a fact about the main process, not about the renderer or the page, so it is
+ * resolved here and nowhere else; `~user` is left alone, since that would need a
+ * passwd lookup and nobody writes it.
+ */
+function expandHome(value) {
+  if (value === "~") return os.homedir()
+  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2))
+  return value
+}
+
+/**
  * An image named by an absolute path, as a data URL the renderer can show.
  *
  * A reply's markdown points at files the thread does not own — the artifacts
@@ -181,19 +197,21 @@ async function read(dir, relative) {
  * reply pointing at some other file cannot have it turned into a data URL.
  */
 async function image(absolute) {
-  if (typeof absolute !== "string" || !path.isAbsolute(absolute)) return { ok: false, error: "Invalid path" }
-  const mime = IMAGE_MIME[path.extname(absolute).toLowerCase()]
+  if (typeof absolute !== "string") return { ok: false, error: "Invalid path" }
+  const file = expandHome(absolute)
+  if (!path.isAbsolute(file)) return { ok: false, error: "Invalid path" }
+  const mime = IMAGE_MIME[path.extname(file).toLowerCase()]
   if (!mime) return { ok: false, error: "Not an image" }
   let stat
   try {
-    stat = await fs.stat(absolute)
+    stat = await fs.stat(file)
   } catch {
     return { ok: false, error: "File not found" }
   }
   if (!stat.isFile()) return { ok: false, error: "Not a file" }
   if (stat.size > MAX_IMAGE_BYTES) return { ok: false, error: "Image is too large" }
   try {
-    const buffer = await fs.readFile(absolute)
+    const buffer = await fs.readFile(file)
     return { ok: true, dataUrl: `data:${mime};base64,${buffer.toString("base64")}`, size: stat.size }
   } catch {
     return { ok: false, error: "Could not read the file" }

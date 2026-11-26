@@ -251,10 +251,13 @@ function decodePath(value: string): string {
  * fetch it itself.
  *
  * A scheme, a protocol-relative URL or a relative path belongs to the browser;
- * only an absolute path names a file this machine holds.
+ * only an absolute path, or one anchored at home with `~`, names a file this
+ * machine holds. The tilde is handed over as written — the main process is the
+ * one that knows where home is.
  */
 function localImagePath(source: string | null): string | null {
   if (!source) return null
+  if (source === "~" || source.startsWith("~/")) return decodePath(source)
   if (source.startsWith("file://")) {
     const path = source.slice("file://".length)
     return path.startsWith("/") ? decodePath(path) : null
