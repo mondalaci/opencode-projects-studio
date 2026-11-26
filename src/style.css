@@ -9,6 +9,9 @@
   --sidebar-width: 264px;
   --scm-width: 300px;
   --header-height: 40px;
+  /* The sidebar's first row: the chat lists' own label, which the floating
+     search and new-chat buttons share instead of a header band of its own. */
+  --sidebar-head-height: 30px;
 
   /*
    * File rows in the source-control list. The directory takes whichever muted

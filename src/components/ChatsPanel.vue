@@ -521,8 +521,10 @@ function onKeydown(event: KeyboardEvent) {
           All chats
           <ShortcutBadge placement="after" modifier="alt" key-label="A" />
         </span>
+        <!-- The row leaves its right end free for the sidebar's floating search
+             and new-chat buttons, which is why no count sits out there: it would
+             land under them. -->
         <span v-if="app.recentChats.loading.value" class="section-note"><Spinner :size="10" /> loading…</span>
-        <span v-else class="section-count" :title="`${recent.length} recent conversations`">{{ recent.length }}</span>
       </header>
 
       <div ref="listEl" class="chat-list" tabindex="-1" @keydown="onKeydown" @blur="endNav">
@@ -804,7 +806,10 @@ function onKeydown(event: KeyboardEvent) {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 12px 4px;
+  /* One row tall, with its right end left free for the sidebar's search and
+     new-chat buttons, which float over it rather than sit in a strip above it. */
+  height: var(--sidebar-head-height);
+  padding: 0 72px 0 12px;
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -813,14 +818,11 @@ function onKeydown(event: KeyboardEvent) {
 .section-label {
   position: relative;
   /* Only as wide as its text, so the badge's `after` placement lands right beside
-     the label instead of in the middle of the header; the auto margin keeps the
-     count at the far right. */
+     the label instead of in the middle of the row. */
   flex: none;
-  margin-right: auto;
   min-width: 0;
   white-space: nowrap;
 }
-.section-count,
 .section-note {
   flex: none;
   display: inline-flex;

@@ -2,7 +2,6 @@
 import { computed } from "vue"
 import { MessageSquarePlus, Search } from "lucide-vue-next"
 import ShortcutBadge from "./ShortcutBadge.vue"
-import iconUrl from "../../build/icon.png"
 import ChatsPanel from "./ChatsPanel.vue"
 import SidebarSearch from "./SidebarSearch.vue"
 import { useApp } from "@/stores/app"
@@ -20,9 +19,12 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
   <aside class="sidebar">
     <SidebarSearch v-if="searchOpen" />
     <template v-else>
-      <header class="head drag-region">
-        <img class="logo" :src="iconUrl" alt="" />
-        <button class="icon search" title="Search conversations (Alt+F)" @click="openSearch()">
+      <!-- The lists own the top of the sidebar: search and new chat float over
+           its corner instead of owning a header band of their own, and the band
+           is gone so nothing is spent on a strip that holds only a logo. -->
+      <div class="grip drag-region" aria-hidden="true"></div>
+      <div class="actions">
+        <button class="icon" title="Search conversations (Alt+F)" @click="openSearch()">
           <Search :size="16" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="F" />
         </button>
@@ -35,7 +37,7 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
           <MessageSquarePlus :size="17" />
           <ShortcutBadge placement="inside" modifier="alt" key-label="N" />
         </button>
-      </header>
+      </div>
 
       <p v-if="notice" class="notice" title="Dismiss" @click="clearNotice()">{{ notice }}</p>
 
@@ -46,6 +48,9 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
 
 <style scoped>
 .sidebar {
+  /* A containing block for the actions, which float over the lists' top corner
+     and must stay above what they cover. */
+  position: relative;
   width: var(--sidebar-width);
   flex: none;
   height: 100%;
@@ -54,29 +59,31 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
   display: flex;
   flex-direction: column;
 }
-.head {
-  /* A containing block for the key badges on the header's buttons, and a layer
-     above the list below so a badge hanging past the header stays visible. */
-  position: relative;
+/* The window grip the removed header band used to give. The row it covers is the
+   chat lists' label, which nothing interacts with, so the grip costs no height;
+   it stops below them rather than reaching into the first row. */
+.grip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--sidebar-head-height);
   z-index: 1;
-  /* Matches the conversation header height so the top strip is one band. */
-  flex: none;
-  height: var(--header-height);
+}
+/* The actions sit on the label row the lists already carry rather than in a strip
+   of their own, so the top of the sidebar holds content and not a band. */
+.actions {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-}
-.logo {
-  /* The app icon itself — the same file the window and the tray use — so the
-     header carries no second drawing of the logo to keep in step. */
-  flex: none;
-  width: 26px;
-  height: 26px;
-  display: block;
+  gap: 2px;
+  height: var(--sidebar-head-height);
 }
 .icon {
-  /* A containing block for its key badge, or the badge anchors to the header and
+  /* A containing block for its key badge, or the badge anchors to the strip and
      lands on top of its neighbour's. */
   position: relative;
   display: inline-flex;
@@ -88,11 +95,6 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
   padding: 6px;
   border-radius: var(--radius-sm);
 }
-/* The project switcher moved to the bottom half's header, so the actions keep to
-   the right of the strip and the logo stays on the left. */
-.icon.search {
-  margin-left: auto;
-}
 .icon:hover {
   background: var(--bg-hover);
   color: var(--text);
@@ -101,10 +103,11 @@ const archivedActive = computed(() => app.projects.isArchived(app.server.directo
   opacity: 0.5;
 }
 /* The sidebar's one line of feedback — a project that would not open, or a
-   folder the app could not add — stays under the header until it is dismissed. */
+   folder the app could not add — sits clear of the actions floating above it,
+   until it is dismissed. */
 .notice {
   flex: none;
-  margin: 0 8px 6px;
+  margin: calc(var(--sidebar-head-height) + 2px) 8px 6px;
   padding: 5px 8px;
   font-size: 11.5px;
   color: var(--git-deleted);

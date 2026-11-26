@@ -152,7 +152,7 @@ Conversation search (`Alt`+`F`) uses the shared
 [**opencode-search**](https://github.com/mondalaci/opencode-search) service (a
 small Bun FTS5/BM25 index over message text, listening on `127.0.0.1:27184`)
 when it is running, and falls back to the server's own title search when it is
-not. The sidebar header shows which one answered ("Content search" or
+not. The search view's header shows which one answered ("Content search" or
 "Fallback · titles"). Results are scoped to the current project's directory,
 matching the sidebar.
 
@@ -183,7 +183,7 @@ build/
   icon-source.png    1024×1024 master of the app icon: opencode's own "oc"
                      letters over the folder, composed from the two sources
   icon.png           512×512 app icon, resized from icon-source.png — the file
-                     the window, the tray, the sidebar and the tab all use
+                     the window, the tray and the tab all use
   tray.png           64×64 tray base icon: the same icon, resized (panels draw a
                      ~20px slot, so a larger source downscales crisply on HiDPI)
 public/
@@ -235,13 +235,14 @@ The application icon is opencode's own "oc" letters over a folder:
 `build/icon.png` is the 512px window, taskbar and dock icon cut from it. The
 master is the file to edit — nothing generates it.
 
-Everywhere the app shows its logo it shows that same file. The sidebar header and
-the instance picker import `build/icon.png` directly, the tab loads `public/icon.png`
+Everywhere the app shows its logo it shows that same file. The instance picker
+imports `build/icon.png` directly, the tab loads `public/icon.png`
 (the copy `npm run icon` writes, since a page cannot reach outside the web root),
 the tray starts from `build/tray.png`, and the busy-tab spinner in
 `src/stores/favicon.ts` draws the icon under its arc. There is no second drawing of
 the mark to keep in step: edit `build/icon-source.png`, run `npm run icon`, and the
-window, the dock, the tray, the sidebar, the picker and the tab all follow.
+window, the dock, the tray, the picker and the tab all follow. The sidebar carries
+no copy of it — its top row belongs to the chat lists.
 
 To regenerate the PNGs (needs ImageMagick on `PATH`):
 
@@ -289,7 +290,9 @@ visible, so its header is the right-hand end of the window and carries the app's
 own minimize / maximize / close buttons. Those header strips are also the
 window's drag regions (`-webkit-app-region: drag`, with interactive elements
 opted out), so the window is moved by its headers, and double-clicking one
-maximizes it.
+maximizes it. The sidebar spends no height on a header of its own: its search and
+new-chat buttons float over the top of the chat lists, and a bare grip of the same
+height across that row is the dragging surface there.
 
 Two consequences of dropping the frame are handled explicitly:
 
