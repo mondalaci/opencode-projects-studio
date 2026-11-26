@@ -1,6 +1,7 @@
 import { computed, ref, watch } from "vue"
 import { desktopBridge, type TrayMenuItem } from "@/api/desktop"
 import { useSessionState } from "./sessionState"
+import { useSessions } from "./sessions"
 import { useWebChat, type WebChatEntry } from "./webchat"
 import { playAttentionChime, playQuestionChime, prepareAudio, resetAudio } from "@/utils/chime"
 import { trayIconDataURL } from "@/utils/trayIcon"
@@ -56,6 +57,7 @@ function projectName(conversation: WebChatEntry): string {
 export function useTray() {
   const state = useSessionState()
   const webchat = useWebChat()
+  const sessions = useSessions()
 
   /** Conversations that did not need the user a moment ago. */
   let previousAttention = new Set<string>()
@@ -200,6 +202,8 @@ export function useTray() {
     url?: string
     state: ConversationState
     reason: string
+    /** It is the conversation the studio itself is showing. */
+    isCurrent: boolean
   }
 
   /**
@@ -224,6 +228,7 @@ export function useTray() {
           sessionID: conversation.id,
           state: conversation.state,
           reason: conversation.reason,
+          isCurrent: conversation.id === sessions.currentID.value,
         })
       }
     }
@@ -237,6 +242,9 @@ export function useTray() {
         url: conversation.link ?? undefined,
         state: conversation.state,
         reason: conversation.reason,
+        // Another app's tab: the studio is never showing it, so focus on this
+        // window says nothing about whether anyone is watching that conversation.
+        isCurrent: false,
       })
     }
     return wanted
@@ -244,17 +252,20 @@ export function useTray() {
 
   /**
    * Announce the conversations that have just started wanting the user: only a
-   * conversation that was not already waiting for one is worth interrupting for.
+   * conversation that was not already waiting for one is worth interrupting for,
+   * and the one on screen in a focused window is not an interruption at all.
    */
   function announce() {
     const wanted = attentionWanted()
+    const away = unfocused()
     for (const conversation of wanted.values()) {
       if (
         !shouldAnnounce({
           state: conversation.state,
           known: previousAttention.has(conversation.id),
           muted: muted.value,
-          unfocused: unfocused(),
+          unfocused: away,
+          isCurrent: conversation.isCurrent,
           seeded,
         })
       ) {
@@ -267,8 +278,11 @@ export function useTray() {
       if (question) playQuestionChime()
       else playAttentionChime()
       // A question sounds but does not pop: it is answered in the app, so the
-      // desktop notification would interrupt more than it helps.
-      if (conversation.state === "blocked" && !question) {
+      // desktop notification would interrupt more than it helps. The same goes
+      // for any chime that sounds while the window has focus — the app is
+      // already in front of the user, so a popup on top of it would only be in
+      // the way.
+      if (away && conversation.state === "blocked" && !question) {
         void bridge?.tray?.notify({
           title: `${conversation.source} needs you`,
           body: `${conversation.title} — ${conversation.reason}`,

@@ -178,6 +178,8 @@ export interface AnnounceInput {
   muted: boolean
   /** The window is hidden or is not the focused window. */
   unfocused: boolean
+  /** The conversation is the one on screen in the app. */
+  isCurrent: boolean
   /** At least one pass has established the baseline. */
   seeded: boolean
 }
@@ -185,11 +187,16 @@ export interface AnnounceInput {
 /**
  * The announcement policy: only a conversation that has just started wanting the
  * user is worth interrupting them for, and only when they are not already looking
- * at the app. "Working" never qualifies — it is not a state that wants a human.
+ * at it. "Working" never qualifies — it is not a state that wants a human.
+ *
+ * A focused window is not the same as a watched conversation: the studio shows
+ * one conversation, so another one finishing behind it is exactly the moment the
+ * user has no way of noticing, and it still gets a chime.
  */
 export function shouldAnnounce(input: AnnounceInput): boolean {
-  if (!input.seeded || input.muted || !input.unfocused || input.known) return false
-  return input.state === "blocked" || input.state === "done"
+  if (!input.seeded || input.muted || input.known) return false
+  if (input.state !== "blocked" && input.state !== "done") return false
+  return input.unfocused || !input.isCurrent
 }
 
 /** Whether a turn that just finished should count as unacknowledged. */
