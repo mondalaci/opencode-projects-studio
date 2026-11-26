@@ -519,7 +519,7 @@ function onKeydown(event: KeyboardEvent) {
       <header class="section-head">
         <span class="section-label">
           All chats
-          <ShortcutBadge placement="below" modifier="alt" key-label="A" />
+          <ShortcutBadge placement="after" modifier="alt" key-label="A" />
         </span>
         <span v-if="app.recentChats.loading.value" class="section-note"><Spinner :size="10" /> loading…</span>
         <span v-else class="section-count" :title="`${recent.length} recent conversations`">{{ recent.length }}</span>
@@ -804,10 +804,12 @@ function onKeydown(event: KeyboardEvent) {
 }
 .section-label {
   position: relative;
-  flex: 1;
+  /* Only as wide as its text, so the badge's `after` placement lands right beside
+     the label instead of in the middle of the header; the auto margin keeps the
+     count at the far right. */
+  flex: none;
+  margin-right: auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .section-count,
@@ -869,45 +871,16 @@ function onKeydown(event: KeyboardEvent) {
   gap: 6px;
   min-width: 0;
 }
-/* The open conversation is marked by the row itself, not by a coloured title.
-   An accent-coloured title was easy to miss in a list of them; a wash on the
-   row, a rail down its left edge and the title in full-strength ink give it a
-   shape the eye catches without reading the words — and one that still reads for
-   someone who cannot tell the hue apart. The ink is the theme's own text colour,
-   so the marker is near-black in the light theme and near-white in the dark
-   one. */
+/* The open conversation is marked by a ring around its row — the only row in the
+   list with one. A fill would have to fight the red and green state tints for the
+   same ground, and whichever won would hide the other; the ring sits on top of
+   the tint instead, so a row can be both open and waiting for a human and say
+   both things at once. It is an outline rather than a border because an outline
+   paints above the row's tint layer — and above the tint's cooldown sweep — so
+   the ring never disappears while the row is being read. */
 .chat.current {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
-}
-.chat.current:hover {
-  background: color-mix(in srgb, var(--accent) 17%, transparent);
-}
-/* A row that is both is already coloured by its state, and stacking the accent
-   wash on top would only turn the tint muddy — the rail and the bold title still
-   say the reader is here. */
-.chat.current.filled {
-  background: none;
-}
-.chat.current.filled:hover {
-  background: var(--bg-hover);
-}
-/* The rail down a row's left edge means one thing only: this is the
-   conversation on screen. The state tints carry their own colour, so the rail
-   never has to compete with them. */
-.chat.current::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-  pointer-events: none;
-}
-.chat.current .chat-title {
-  color: var(--text);
-  font-weight: 700;
+  outline: 2px solid var(--row-active-ring);
+  outline-offset: -2px;
 }
 /* A conversation that waits for a human tints its row with the state's colour —
    green for a finish nobody has read, red for a blocked turn. It used to be a

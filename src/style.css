@@ -51,6 +51,13 @@ html[data-theme="dark"] {
   --border: #3a3a3a;
   --border-strong: #4a4a4a;
   /*
+   * The open conversation's row is marked by a ring around it, not by a fill: a
+   * fill would have to fight the red and green state tints for the same ground,
+   * and whichever won would hide the other. The ring is the theme's strongest
+   * ink, so it outranks the tints in contrast without spending the accent colour.
+   */
+  --row-active-ring: #f2f2f2;
+  /*
    * The accent is the app's one interactive colour: links, selection, the open
    * conversation, primary buttons. It is a blue on purpose — red and green are
    * spent on conversation state (blocked, done), so an accent in either of those
@@ -84,6 +91,8 @@ html[data-theme="light"] {
 
   --border: #e2e2e4;
   --border-strong: #cfcfd4;
+  /* The same ring in the light theme's strongest ink. */
+  --row-active-ring: #1c1c1e;
   /* The same blue, darkened for a white ground. */
   --accent: #2563eb;
   --accent-hover: #1d4ed8;

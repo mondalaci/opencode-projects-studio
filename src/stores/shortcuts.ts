@@ -5,8 +5,10 @@ import { reactive, ref } from "vue"
  *
  * Holding a modifier reveals key badges on the controls its shortcuts trigger,
  * mirroring the "hold Cmd to see shortcuts" pattern. `Alt` and `Ctrl` are separate
- * layers — the filters live on Ctrl, everything else on Alt — so the layer that is
- * held is what gets shown, and each badge names its own modifier.
+ * layers — the filters live on Ctrl, everything else on Alt — but holding either
+ * one reveals both, so a reader who reaches for Ctrl to find the filters also sees
+ * that Alt+A jumps to the next conversation that needs them. Each badge still
+ * names its own modifier, so a letter never appears next to the wrong one.
  *
  * Actions that need to reach a specific component are dispatched through
  * `openRequests` counters that the component watches.

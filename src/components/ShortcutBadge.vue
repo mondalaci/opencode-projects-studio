@@ -3,11 +3,12 @@ import { computed } from "vue"
 import { heldModifier } from "@/stores/shortcuts"
 
 /**
- * The key badge that floats on a control while the modifier for its shortcut is
- * held: `Alt` for the actions on this keyboard layer, `Ctrl` for the filters.
+ * The key badge that floats on a control while a modifier is held: `Alt` for the
+ * actions on that keyboard layer, `Ctrl` for the filters.
  *
- * Holding a modifier reveals only its own layer, and the badge names it, so a
- * letter is never shown next to the wrong modifier.
+ * Holding either modifier reveals both layers, so the two are read as one
+ * keyboard rather than as two separate reveals. The badge still names its own
+ * modifier, so a letter is never shown next to the wrong one.
  */
 const props = defineProps<{
   /** Which modifier this shortcut belongs to. */
@@ -23,12 +24,14 @@ const props = defineProps<{
    * - `below` floats it under a text label, centred: for a label narrower than the
    *   badge, where the corner would reach past the window edge. Nothing enters the
    *   flow, so holding a modifier never moves the layout, and sitting under the
-   *   label keeps the label readable.
+   *   label keeps the label readable;
+   * - `after` sits just to the right of a label, in a header row with free space
+   *   beside it, so the badge never covers the row underneath.
    */
-  placement?: "corner" | "inside" | "below"
+  placement?: "corner" | "inside" | "below" | "after"
 }>()
 
-const visible = computed(() => heldModifier.value === props.modifier)
+const visible = computed(() => heldModifier.value !== null)
 const prefix = computed(() => (props.modifier === "alt" ? "Alt" : "Ctrl"))
 </script>
 
@@ -57,6 +60,17 @@ const prefix = computed(() => (props.modifier === "alt" ? "Alt" : "Ctrl"))
   top: calc(100% + 3px);
   left: 50%;
   transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+/* Beside its label, in the free space a header row leaves to the right: the badge
+   stays on the header's line instead of covering the first row below it. */
+.kbd.after {
+  position: absolute;
+  left: calc(100% + 5px);
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 4;
   pointer-events: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);

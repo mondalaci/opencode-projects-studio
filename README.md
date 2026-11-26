@@ -49,9 +49,11 @@ conversations:
   conversation was opened, or its block was answered) does not blink out: it
   shrinks away to the right over six seconds.
 - **The open conversation** — in either half of the sidebar, the conversation on
-  screen is the only row with a rail: an accent wash, an accent rail down its left
-  edge and its title in the theme's ink at full weight, so it is recognisable at a
-  glance without depending on the hue.
+  screen is the only row with a ring around it. A filled row would have to fight
+  the red and green state tints for the same ground, so the ring sits on top of
+  the tint instead: a row that is both open and waiting for a human shows both
+  things at once. The ring is drawn in the theme's strongest ink, so it outranks
+  the tints in contrast without spending the accent colour.
 - **Tray icon** — the same state rolled up across all projects into one badge,
   with a menu that jumps straight to the conversation that needs you; a project
   with several conversations worth showing becomes a submenu of them.
@@ -445,8 +447,10 @@ opened, which is what refetched the session.
 
 Hold `Alt` or `Ctrl` to reveal the key badges on the controls they trigger. The
 two are separate layers — `Alt` carries the actions, `Ctrl` the filters, the
-project switcher and the two walk-the-list pairs — and each badge names its own
-modifier, so a letter never appears next to the wrong one.
+project switcher and the two walk-the-list pairs — but holding either one reveals
+both, so reaching for `Ctrl` to find the filters also shows that `Alt`+`A` jumps to
+the next conversation that needs you. Each badge names its own modifier, so a
+letter never appears next to the wrong one.
 
 | Shortcut | Action |
 | --- | --- |

@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
     <div class="pr-head">
       <span class="pr-title">
         <Volume2 :size="15" /> Pronunciation
-        <span v-if="heldModifier === 'alt' && entries.length" class="kbd">Alt V</span>
+        <span v-if="heldModifier !== null && entries.length" class="kbd">Alt V</span>
         <span v-if="keySource === 'server'" class="pr-key-badge" title="Using the connected opencode server's OpenRouter key">
           key: opencode server
         </span>
