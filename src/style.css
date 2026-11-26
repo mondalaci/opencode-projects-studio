@@ -50,9 +50,17 @@ html[data-theme="dark"] {
   --git-renamed: #58a6ff;
   --border: #3a3a3a;
   --border-strong: #4a4a4a;
-  --accent: #d97757;
-  --accent-hover: #e08a6d;
-  --accent-text: #ffffff;
+  /*
+   * The accent is the app's one interactive colour: links, selection, the open
+   * conversation, primary buttons. It is a blue on purpose — red and green are
+   * spent on conversation state (blocked, done), so an accent in either of those
+   * hues made the open row look like a row that wanted something. The ink on it
+   * is dark in this theme, because a blue bright enough to read on #212121 is
+   * too bright to carry white text.
+   */
+  --accent: #5b9bff;
+  --accent-hover: #7cb2ff;
+  --accent-text: #0d1117;
   --code-bg: #0f0f0f;
   --code-border: #333;
   --danger: #ef6b6b;
@@ -76,8 +84,9 @@ html[data-theme="light"] {
 
   --border: #e2e2e4;
   --border-strong: #cfcfd4;
-  --accent: #c96442;
-  --accent-hover: #b85738;
+  /* The same blue, darkened for a white ground. */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --accent-text: #ffffff;
   --code-bg: #0f172a;
   --code-border: #1e293b;

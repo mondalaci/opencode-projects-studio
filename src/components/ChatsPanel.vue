@@ -62,11 +62,11 @@ function projectOf(chat: SessionInfo): string {
  * The fill a row takes when its conversation waits for a human.
  *
  * This is the Cinnamon applet's rule, applied to the list it summarises: a
- * blocked conversation (red) and a finished one nobody has read yet (green) fill
- * their whole row with the state's colour, so they are visible without hunting
- * for a 7px dot. A working or idle conversation keeps the list background — the
- * dot says all there is to say about those, and a wall of filled working rows
- * would shout about nothing new.
+ * blocked conversation (red) and a finished one nobody has read yet (green)
+ * wear the state's colour as a tint over the whole row, so they are visible
+ * without hunting for a 7px dot. A working or idle conversation keeps the list
+ * background — the dot says all there is to say about those, and a wall of
+ * tinted working rows would shout about nothing new.
  *
  * A fill that has just ended (the conversation was opened, or its block was
  * answered) keeps its colour for a moment and cools down, so the eye can follow
@@ -869,25 +869,60 @@ function onKeydown(event: KeyboardEvent) {
   gap: 6px;
   min-width: 0;
 }
-/* The open conversation is marked on its title, like the search results. */
-.chat.current .chat-title {
-  color: var(--accent);
-  font-weight: 600;
+/* The open conversation is marked by the row itself, not by a coloured title.
+   An accent-coloured title was easy to miss in a list of them; a wash on the
+   row, a rail down its left edge and the title in full-strength ink give it a
+   shape the eye catches without reading the words — and one that still reads for
+   someone who cannot tell the hue apart. The ink is the theme's own text colour,
+   so the marker is near-black in the light theme and near-white in the dark
+   one. */
+.chat.current {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
-/* A conversation that waits for a human fills its row with the state's colour and
-   writes in dark ink, the way the Cinnamon applet's tiles do: bright green for a
-   finish nobody has read, bright red for a blocked turn. The colours are the
-   applet's (the studio's dark-theme state colours) on both themes, because the
-   fill has to be the loud one; the ink is dark for the same reason. */
+.chat.current:hover {
+  background: color-mix(in srgb, var(--accent) 17%, transparent);
+}
+/* A row that is both is already coloured by its state, and stacking the accent
+   wash on top would only turn the tint muddy — the rail and the bold title still
+   say the reader is here. */
+.chat.current.filled {
+  background: none;
+}
+.chat.current.filled:hover {
+  background: var(--bg-hover);
+}
+/* The rail down a row's left edge means one thing only: this is the
+   conversation on screen. The state tints carry their own colour, so the rail
+   never has to compete with them. */
+.chat.current::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.chat.current .chat-title {
+  color: var(--text);
+  font-weight: 700;
+}
+/* A conversation that waits for a human tints its row with the state's colour —
+   green for a finish nobody has read, red for a blocked turn. It used to be a
+   solid fill in the Cinnamon applet's tile colours, which made one blocked row
+   shout louder than the whole list around it; the tint keeps the state findable
+   at a glance while leaving the text in the theme's own ink instead of dark on
+   colour. The colour is the applet's dark-theme value on both themes, so the
+   tint reads the same way in either. */
 .chat.filled {
   --fill: #3fb950;
-  --fill-ink: #0d1117;
-  color: var(--fill-ink);
 }
 .chat.filled.blocked {
   --fill: #f85149;
 }
-/* The fill is its own layer behind the row's text, because the cooldown retracts
+/* The tint is its own layer behind the row's text, because the cooldown retracts
    that layer while the text stays where it is. */
 .chat.filled::before {
   content: "";
@@ -895,12 +930,12 @@ function onKeydown(event: KeyboardEvent) {
   inset: 0;
   z-index: 0;
   border-radius: var(--radius-sm);
-  background: var(--fill);
+  background: color-mix(in srgb, var(--fill) 18%, transparent);
   clip-path: inset(0 0 0 0);
   pointer-events: none;
 }
-/* The row's content sits above the fill layer, and the actions button above the
-   hit area, or the fill would swallow it. */
+/* The row's content sits above the tint layer, and the actions button above the
+   hit area, or the tint would swallow it. */
 .chat.filled .chat-hit {
   position: relative;
   z-index: 1;
@@ -908,40 +943,18 @@ function onKeydown(event: KeyboardEvent) {
 .chat.filled :deep(.conversation-menu) {
   z-index: 2;
 }
-.chat.filled:not(.cooling) .chat-title,
-.chat.filled:not(.cooling) .chat-project,
-.chat.filled:not(.cooling) .chat-time {
-  color: var(--fill-ink);
-}
-/* The dot has nowhere to stand out on a fill of its own colour, so it turns into
-   the fill's ink and stays a visible bullet. */
-.chat.filled:not(.cooling) .state-dot {
-  background: var(--fill-ink);
-  animation: none;
-}
-/* The keyboard marker outlines the row in ink, since its accent tint would
-   fight the fill. The ring goes on the fill layer, which is the only thing above
-   the row's own background. */
+/* The keyboard cursor's ring goes on the tint layer, which sits above the row's
+   own background, so the tint cannot wash it out. */
 .chat.filled.kb-active::before {
-  box-shadow: inset 0 0 0 2px var(--fill-ink);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
-/* The cooldown: a fill that has just ended — the conversation was opened, or its
-   block was answered — shrinks away to the right over six seconds, its ink
-   turning into the ordinary text and dot colours on the way. A sweep instead of
-   a fade, because a fading colour passes through muddy mixes on the way out; this
-   one just gets narrower until the row is its old self again. */
-.chat.filled.cooling {
-  color: var(--text);
-}
+/* The cooldown: a tint that has just ended — the conversation was opened, or its
+   block was answered — shrinks away to the right over six seconds. A sweep
+   instead of a fade, because a fading colour passes through muddy mixes on the
+   way out; this one just gets narrower until the row is its old self again. */
 .chat.filled.cooling::before {
   clip-path: inset(0 0 0 100%);
   transition: clip-path 6s linear;
-}
-.chat.filled.cooling .chat-title,
-.chat.filled.cooling .chat-project,
-.chat.filled.cooling .chat-time,
-.chat.filled.cooling .state-dot {
-  transition: color 6s ease, background-color 6s ease;
 }
 .chat-title {
   flex: 1;
@@ -977,9 +990,6 @@ function onKeydown(event: KeyboardEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.chat.current .chat-project {
-  color: var(--accent);
 }
 .chat-project-name {
   min-width: 0;

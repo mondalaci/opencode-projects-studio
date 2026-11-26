@@ -41,13 +41,17 @@ conversations:
 - **Conversation state dots** — every listed conversation carries a dot: red
   blocked, amber working, green done and not yet opened, grey idle. A project's
   own state is the most actionable of its conversations. In the all-projects half
-  a conversation that waits for a human fills its whole row with the state's
-  colour and writes in dark ink — bright green for an unread finish, bright red
-  for a blocked turn — the way the Cinnamon applet's tiles do, so it is visible
-  without reading the dots; working and idle keep the list background. A fill that
-  has just ended (the conversation was opened, or its block was answered) does not
-  blink out: it shrinks away to the right over six seconds, its ink turning back
-  into the ordinary text colours on the way.
+  a conversation that waits for a human tints its whole row with the state's
+  colour — green for an unread finish, red for a blocked turn — so it is visible
+  without reading the dots; working and idle keep the list background. The tint is
+  a wash rather than a solid fill, so the text stays in the theme's own ink and one
+  blocked row does not drown the list around it. A fill that has just ended (the
+  conversation was opened, or its block was answered) does not blink out: it
+  shrinks away to the right over six seconds.
+- **The open conversation** — in either half of the sidebar, the conversation on
+  screen is the only row with a rail: an accent wash, an accent rail down its left
+  edge and its title in the theme's ink at full weight, so it is recognisable at a
+  glance without depending on the hue.
 - **Tray icon** — the same state rolled up across all projects into one badge,
   with a menu that jumps straight to the conversation that needs you; a project
   with several conversations worth showing becomes a submenu of them.
