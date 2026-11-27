@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { ChevronRight } from "lucide-vue-next"
+import type { SessionMessage } from "@/api/types"
 import MessageItem from "./MessageItem.vue"
 import Caret from "./Caret.vue"
 import Spinner from "./Spinner.vue"
 import ThreadPrompts from "./ThreadPrompts.vue"
 import { useChat } from "@/stores/chat"
+import { compactReading } from "@/stores/reading"
+import { collapsedTurns, stepSummary } from "@/utils/compact"
 import { findOpen } from "@/stores/find"
 
 const { messages, conversation, loading, currentSessionID, scrollToBottomRequest, contentBelow, pendingForms, pendingPermissions, isBusy, awaitingUser, turnAnchor } = useChat()
@@ -15,6 +19,46 @@ const pinned = ref(true)
 
 /** What the scrollbar's ticks mark: the prompts, in the order they were asked. */
 const promptIDs = computed(() => conversation.value.filter((message) => message.type === "user").map((message) => message.id))
+
+/**
+ * Turns the reader has opened again in the compact view, by the prompt that
+ * opened them. Expansion belongs to the view rather than to the conversation: a
+ * turn opened to see what a call did folds away again with the next session.
+ */
+const opened = ref<Set<string>>(new Set())
+
+const collapsed = computed(() => collapsedTurns(conversation.value, compactReading.value))
+
+/** One row per message, with what the compact view makes of it. */
+interface Row {
+  message: SessionMessage
+  /** What the turn's summary line says, when this row is where it is drawn. */
+  summary: string | null
+  /** The prompt that opened the row's turn: what an opened turn is remembered by. */
+  key: string
+  /** Whether the row's steps are folded away. */
+  compacted: boolean
+}
+
+const rows = computed<Row[]>(() =>
+  conversation.value.map((message) => {
+    const turn = collapsed.value.get(message.id) ?? null
+    return {
+      message,
+      summary: turn && turn.anchor === message.id ? stepSummary(turn) : null,
+      key: turn?.key ?? "",
+      compacted: !!turn && !opened.value.has(turn.key),
+    }
+  }),
+)
+
+/** Fold a turn's steps away again, or open them. */
+function toggleTurn(key: string) {
+  const next = new Set(opened.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  opened.value = next
+}
 
 // Distance (px) from the bottom that still counts as "at the bottom".
 const BOTTOM_EPSILON = 8
@@ -238,6 +282,7 @@ watch(pinned, (value) => { contentBelow.value = !value }, { immediate: true })
 watch(currentSessionID, () => {
   pinned.value = true
   programmatic = false
+  opened.value = new Set()
 }, { flush: "post" })
 
 /**
@@ -284,14 +329,31 @@ onMounted(() => {
              scrollbar: the marks are placed by the height of this, and a message
              arriving above them is not the only thing that changes it. -->
         <div ref="content" class="content">
-          <MessageItem
-            v-for="message in conversation"
-            :key="message.id"
-            :message="message"
-            :streaming="message.id === lastAssistantID && message.type === 'assistant' && !message.time?.completed"
-            :caret="message.id === turnReply?.id"
-            :latest="message.id === lastAssistantID"
-          />
+          <template v-for="row in rows" :key="row.message.id">
+            <!-- The steps the compact view folded away, in one line where the
+                 first of them would have been. A click brings the turn back
+                 whole, in its own order, and folds it away again. -->
+            <div v-if="row.summary" class="steps">
+              <button
+                type="button"
+                class="steps-toggle"
+                :aria-expanded="!row.compacted"
+                :title="`${row.compacted ? 'Show' : 'Hide'} ${row.summary}`"
+                @click="toggleTurn(row.key)"
+              >
+                <ChevronRight :size="13" class="steps-chevron" :class="{ open: !row.compacted }" />
+                <span>{{ row.summary }}</span>
+              </button>
+            </div>
+
+            <MessageItem
+              :message="row.message"
+              :streaming="row.message.id === lastAssistantID && row.message.type === 'assistant' && !row.message.time?.completed"
+              :caret="row.message.id === turnReply?.id"
+              :latest="row.message.id === lastAssistantID"
+              :compact="row.compacted"
+            />
+          </template>
 
           <!-- The caret of a turn that has not begun to answer: it hangs below the
                prompt, where the reply it is waiting for will be drawn. -->
@@ -364,6 +426,42 @@ onMounted(() => {
   margin: 0 auto;
   width: 100%;
   padding: 10px 0 10px calc(28px + 12px);
+}
+/* The line that stands where a turn's steps were folded away: a disclosure in
+   the muted mono the notes use, in the same column the reply's text fills, so it
+   reads as the conversation's own furniture rather than as a message. */
+.steps {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  width: 100%;
+  padding: 1px 0;
+  /* Past the avatar gutter the reply leaves, the way a note row is. */
+  padding-left: calc(28px + 12px);
+}
+.steps-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px 2px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.steps-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.steps-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.steps-chevron.open {
+  transform: rotate(90deg);
 }
 .spacer {
   height: 12px;

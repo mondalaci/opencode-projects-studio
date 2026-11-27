@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { X, ArrowDownToLine, CircleAlert, Check, Hash, Moon, Sun } from "lucide-vue-next"
+import { X, ArrowDownToLine, CircleAlert, Check, Hash, Moon, MessageSquareText, Rows3, Sun } from "lucide-vue-next"
 import type { AssistantMessage } from "@/api/types"
 import Sidebar from "./Sidebar.vue"
 import SourceControl from "./SourceControl.vue"
@@ -24,6 +24,7 @@ import { openRequests, requestOpen, requestPromptStep, setHeldModifier, shortcut
 import { openProjectPicker, toggleProjectPicker } from "@/stores/projectPicker"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
+import { compactReading, toggleReadingMode } from "@/stores/reading"
 import { applyScmWidth, SCM_DEFAULT_WIDTH, SCM_MAX_WIDTH, SCM_MIN_WIDTH, scmWidth, setScmWidth } from "@/stores/layout"
 import { theme, toggleTheme } from "@/theme"
 import { formatConversationDate, formatConversationDateTime, formatCost, formatTokens, formatTokensPerSecond } from "@/utils/format"
@@ -446,6 +447,16 @@ onBeforeUnmount(() => {
             <span class="stat" :title="tokensPerSecondTitle">{{ formatTokensPerSecond(tokensPerSecond) }}</span>
           </div>
           <button
+            class="mode-btn"
+            :class="{ on: compactReading }"
+            :title="compactReading ? 'Show every step' : 'Compact view: text only'"
+            :aria-label="compactReading ? 'Show every step' : 'Compact view: text only'"
+            @click="toggleReadingMode()"
+          >
+            <Rows3 v-if="compactReading" :size="16" />
+            <MessageSquareText v-else :size="16" />
+          </button>
+          <button
             class="theme-btn"
             :title="theme === 'dark' ? 'Light theme' : 'Dark theme'"
             aria-label="Toggle dark mode"
@@ -669,6 +680,7 @@ onBeforeUnmount(() => {
 }
 .app-btn,
 .theme-btn,
+.mode-btn,
 .share-btn {
   flex: none;
   display: inline-flex;
@@ -682,9 +694,15 @@ onBeforeUnmount(() => {
 }
 .app-btn:hover,
 .theme-btn:hover,
+.mode-btn:hover,
 .share-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+/* The compact view is a mode, not an action, so the button stays marked while it
+   is on: the accent is the theme's own "this is in effect" colour. */
+.mode-btn.on {
+  color: var(--accent);
 }
 .app-btn.active,
 .share-btn.copied,

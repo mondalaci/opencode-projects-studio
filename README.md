@@ -66,6 +66,11 @@ conversations:
   the tint instead: a row that is both open and waiting for a human shows both
   things at once. The ring is drawn in the theme's strongest ink, so it outranks
   the tints in contrast without spending the accent colour.
+- **Compact view** — an application-wide switch in the conversation's header
+  between the full transcript and the text alone: a turn's reasoning blocks and
+  tool calls fold behind one line naming what they hold, and the prompts and
+  answers read as one piece. The line opens the turn again, in the order it
+  happened.
 - **Tray icon** — the same state rolled up across all projects into one badge,
   with a menu that jumps straight to the conversation that needs you; a project
   with several conversations worth showing becomes a submenu of them.
@@ -209,6 +214,7 @@ src/                 Renderer (Vue 3 app inherited from opencode-web-chat)
   stores/hiddenProjects.ts  The hidden-project list, read and written through the runtime config
   stores/git.ts      Source-control state: status polling, selection, diffs
   stores/layout.ts   Source-control panel width
+  stores/reading.ts  The full / compact reading-view choice
   stores/desktopWindow.ts  Maximized state for the chromeless frame
   stores/sessionState.ts   Visible conversation set per project, the tray state and the unread marks
   stores/tray.ts     Rollup -> badge bitmap, tooltip and menu
@@ -465,6 +471,34 @@ payload), which updates the project's newest conversation and both sidebar lists
 in place. Without it a fresh conversation sat as "Untitled" until its row was
 opened, which is what refetched the session.
 
+## Reading a conversation
+
+The conversation's header carries the switch between the two ways of reading it.
+The default, **full view**, draws everything the model did: its reasoning blocks
+and every tool call, in the order they happened. **Compact view** — the switch
+between the session figures and the theme toggle — draws only what there is to
+read: the prompts and the replies, with the steps that produced them folded behind
+one line per turn.
+
+The line names what it holds — "6 tool calls, 2 reasoning blocks" — and opens the
+turn again as it happened; clicking it once more folds it away. The switch in the
+header is what returns to the full transcript, so a conversation read compactly
+does not lose anything.
+
+A running turn is the one exception, and only until it writes: while it has
+produced nothing to read yet, its reasoning and calls are drawn as usual. They are
+the only sign of what is happening, and the reader would otherwise watch a caret
+with nothing above it. The moment the first text arrives, the turn's steps fold
+away and the text stands on its own. A turn that never writes — one stopped while
+thinking — keeps its steps for the same reason. A composed message (the drafting
+tool's output) is content rather than a step, and so is a picture a tool returned
+— a screenshot read from disk, an image the model generated — so compact view
+keeps both, image cards included. A turn that has produced only one of them is
+folded once it is there to read.
+
+The choice is application-wide rather than per conversation: it is how the reader
+likes to read, which does not change with the project.
+
 ## Keyboard shortcuts
 
 Hold `Alt` or `Ctrl` to reveal the key badges on the controls they trigger. The
@@ -575,11 +609,12 @@ the app background rather than a dark code surface.
 
 ## Remembered state
 
-Theme, sidebar and panel widths, the chat lists' split, the panel's visibility,
-the saved server and the unread markers all live in `localStorage`, which is keyed
-by origin — so the UI is served from a **fixed** loopback port (`45999`) rather
-than an ephemeral one. If that port is taken, the app falls back to an ephemeral
-port and says so in the log, because settings will not persist for that run.
+Theme, the reading view, sidebar and panel widths, the chat lists' split, the
+panel's visibility, the saved server and the unread markers all live in
+`localStorage`, which is keyed by origin — so the UI is served from a **fixed**
+loopback port (`45999`) rather than an ephemeral one. If that port is taken, the
+app falls back to an ephemeral port and says so in the log, because settings will
+not persist for that run.
 
 ## Notes and limitations
 
