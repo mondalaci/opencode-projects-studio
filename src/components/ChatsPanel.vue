@@ -542,7 +542,8 @@ function onKeydown(event: KeyboardEvent) {
     </section>
 
     <!-- The divider between the two lists: drag (or focus and use the arrows) to
-         give either half more room; double-click returns to an even split. -->
+         give either half more room; double-click returns to an even split. The
+         bottom half draws the line itself, like the source-control panel. -->
     <Splitter
       v-if="projectOpen"
       v-model="split"
@@ -708,6 +709,10 @@ function onKeydown(event: KeyboardEvent) {
 }
 .project-section {
   flex-grow: var(--split-bottom, 1);
+  /* The line that separates the two halves, drawn the same way the
+     source-control panel draws its own edge. It stays when the list is folded
+     away, so the collapsed header still reads as the bottom half. */
+  border-top: 1px solid var(--border);
 }
 .project-section.collapsed {
   flex: 0 0 auto;

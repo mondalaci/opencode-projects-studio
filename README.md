@@ -22,14 +22,15 @@ conversations:
   to the top with its neighbours: the rows travel to their new places instead of
   snapping, so the reorder is something the eye can follow.
   The bottom half lists only the open project's own conversations (the newest 50),
-  under that project's name. The divider between them drags to give either half
-  more room (double-click evens them out, or focus it and use the arrows), and the
-  share is remembered. The open project is chosen from the **project switcher** at
-  the top of the bottom half (`Ctrl`+`R`, or `Alt`+`P`), which searches projects as
-  it is typed and also holds **Add project**; its `⋯` menu on the bottom
-  half's header hides or deletes it (behind a confirmation), and a **Hidden**
-  section folds away under the split to bring one back. Every conversation's own
-  `⋯` menu renames it or deletes it for good, also behind a confirmation.
+  under that project's name, below a hairline border that separates the two
+  halves. The divider between them drags to give either half more room
+  (double-click evens them out, or focus it and use the arrows), and the share is
+  remembered. The open project is chosen from the **project switcher** at the top
+  of the bottom half (`Ctrl`+`R`, or `Alt`+`P`), which searches projects as it is
+  typed and also holds **Add project**; its `⋯` menu on the bottom half's header
+  hides or deletes it (behind a confirmation), and a **Hidden** section folds away
+  under the split to bring one back. Every conversation's own `⋯` menu renames it
+  or deletes it for good, also behind a confirmation.
 - **Diff panel** — a permanent right-hand panel listing the uncommitted changes of
   the active project's repository as a flat list of file paths, with the count
   beside the title and the staged ones under their own heading. It re-scans the
