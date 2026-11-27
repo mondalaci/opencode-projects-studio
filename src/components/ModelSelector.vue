@@ -223,6 +223,17 @@ function isFree(model: ModelInfo): boolean {
   return cost ? !cost.input && !cost.output : false
 }
 
+/**
+ * A model the catalog carries no price for at all.
+ *
+ * Routers and gateway models (`openrouter/fusion`, `openrouter/auto`) are billed as whatever
+ * they route to, so they have no price of their own — and that is not the same as free. Callers
+ * that flatten "no price" into zero rates make them look free; this keeps the two apart.
+ */
+function isUnpriced(model: ModelInfo): boolean {
+  return baseCost(model) === undefined
+}
+
 /** Compact USD-per-1M-token price: `$3/$15`. */
 function price(value: number) {
   if (!value) return "0"
@@ -231,12 +242,14 @@ function price(value: number) {
 }
 function costLabel(model: ModelInfo) {
   if (isFree(model)) return "free"
+  if (isUnpriced(model)) return "unpriced"
   const cost = baseCost(model)
   if (!cost || (!cost.input && !cost.output)) return ""
   return `$${price(cost.input)}/$${price(cost.output)}`
 }
 function costTitle(model: ModelInfo) {
   if (isFree(model)) return "Free"
+  if (isUnpriced(model)) return "No price of its own: this entry is billed as whatever it routes to"
   const cost = baseCost(model)
   if (!cost) return ""
   return `Input $${cost.input} / 1M tokens · Output $${cost.output} / 1M tokens`
@@ -249,6 +262,7 @@ function costTitle(model: ModelInfo) {
 function costColor(model: ModelInfo): string | undefined {
   const free = "hsl(142 60% 45%)"
   if (isFree(model)) return free
+  if (isUnpriced(model)) return "var(--text-muted)"
   const cost = baseCost(model)
   if (!cost) return undefined
   const value = Math.max(cost.input || 0, cost.output || 0)
