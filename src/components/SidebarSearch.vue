@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { Search, X } from "lucide-vue-next"
+import { Folder, Globe, Search, X } from "lucide-vue-next"
 import { searchContent, searchHealth, listAllSessions, listSessionsPage } from "@/api/search"
+import { sessionDirectory } from "@/api/types"
 import { useApp } from "@/stores/app"
-import { closeSearch } from "@/stores/search"
+import { closeSearch, searchScope, toggleSearchScope } from "@/stores/search"
 import { relativeTime } from "@/utils/format"
 
 const app = useApp()
@@ -16,6 +17,27 @@ interface Hit {
   title: string
   updated?: number
   snippet?: string
+  /** The project the conversation lives in, shown when the search spans all of them. */
+  directory?: string
+}
+
+/**
+ * The scope the search actually runs in.
+ *
+ * "Project" needs a project to point at; with none open (the server has no
+ * directory) there is nothing to narrow to, so the search covers everything
+ * rather than pretending to be scoped.
+ */
+const scope = computed(() => (searchScope.value === "project" && directory.value ? "project" : "all"))
+
+/** The directory to narrow to, or `undefined` when the search covers every project. */
+function scopedDirectory(): string | undefined {
+  return scope.value === "project" ? directory.value || undefined : undefined
+}
+
+/** The project's display name for a result row. */
+function projectLabel(path: string | undefined): string {
+  return app.projects.displayName(path)
 }
 
 const query = ref("")
@@ -42,15 +64,36 @@ function titleHits(list: Awaited<ReturnType<typeof app.sessions.query>>): Hit[] 
     id: session.id,
     title: session.title || "Untitled",
     updated: session.time?.updated ?? session.time?.created,
+    directory: sessionDirectory(session),
   }))
 }
 
-/** How many conversations the service holds for the current project. */
+/** How many conversations the service holds for the current scope. */
 async function scopedTotal(): Promise<number | null> {
   try {
-    return (await listSessionsPage(0, 1, 5000, directory.value)).total
+    return (await listSessionsPage(0, 1, 5000, scopedDirectory())).total
   } catch {
     return null
+  }
+}
+
+/** The conversations shown before anything is typed. */
+async function recent(active: typeof client.value): Promise<Hit[]> {
+  if (scope.value === "project") {
+    return active ? titleHits(await app.sessions.query(active, { directory: directory.value, limit: 100 })) : []
+  }
+  // Every project's newest conversations, straight from the service when it is
+  // up — the same list "List all" pages through.
+  try {
+    const page = await listSessionsPage(0, 100)
+    return page.results.map((hit) => ({
+      id: hit.sessionID,
+      title: hit.title || "Untitled",
+      updated: hit.updated,
+      directory: hit.directory,
+    }))
+  } catch {
+    return active ? titleHits(await app.sessions.query(active, { limit: 100 })) : []
   }
 }
 
@@ -62,17 +105,18 @@ async function run(raw: string) {
   loading.value = true
   try {
     if (!search) {
-      hits.value = active ? titleHits(await app.sessions.query(active, { directory: directory.value, limit: 100 })) : []
+      hits.value = await recent(active)
     } else {
       let done = false
       try {
-        const results = await searchContent(search, 30, directory.value)
+        const results = await searchContent(search, 30, scopedDirectory())
         if (seq !== requestSeq) return
         hits.value = results.map((hit) => ({
           id: hit.sessionID,
           title: hit.title || "Untitled",
           updated: hit.updated,
           snippet: hit.snippet,
+          directory: hit.directory,
         }))
         mode.value = "content"
         done = true
@@ -82,7 +126,7 @@ async function run(raw: string) {
       }
       if (!done) {
         const list = active
-          ? await app.sessions.query(active, { directory: directory.value, search, limit: 100000 })
+          ? await app.sessions.query(active, { directory: scopedDirectory(), search, limit: 100000 })
           : []
         if (seq !== requestSeq) return
         hits.value = titleHits(list)
@@ -97,7 +141,7 @@ async function run(raw: string) {
   }
 }
 
-/** Load and display every conversation, newest first. */
+/** Load and display every conversation in the current scope, newest first. */
 async function showAll() {
   const active = client.value
   const seq = ++requestSeq
@@ -107,17 +151,19 @@ async function showAll() {
   try {
     let list: Hit[] = []
     try {
-      const page = await listAllSessions(2000, directory.value)
+      const page = await listAllSessions(2000, scopedDirectory())
       list = page.results.map((hit) => ({
         id: hit.sessionID,
         title: hit.title || "Untitled",
         updated: hit.updated,
+        directory: hit.directory,
       }))
       total.value = page.total
       mode.value = "content"
     } catch {
       mode.value = "fallback"
-      if (active) list = titleHits(await app.sessions.query(active, { directory: directory.value, limit: 100000 }))
+      if (active) list = titleHits(await app.sessions.query(active, { directory: scopedDirectory(), limit: 100000 }))
+      total.value = list.length
     }
     if (seq !== requestSeq) return
     hits.value = list
@@ -131,6 +177,16 @@ async function showAll() {
 watch(query, (value) => {
   if (debounce) clearTimeout(debounce)
   debounce = setTimeout(() => void run(value), 200)
+})
+
+// A scope switch re-answers the question on screen: the list the reader is
+// looking at either narrows to this project or widens to every project.
+watch(scope, () => {
+  if (all.value) void showAll()
+  else void run(query.value)
+  void scopedTotal().then((count) => {
+    if (count != null) total.value = count
+  })
 })
 
 onMounted(() => {
@@ -153,9 +209,17 @@ onBeforeUnmount(() => {
   requestSeq++
 })
 
-const heading = computed(() =>
-  all.value ? "All conversations" : query.value.trim() ? "Results" : "Recent conversations",
-)
+const heading = computed(() => {
+  const base = all.value ? "All conversations" : query.value.trim() ? "Results" : "Recent conversations"
+  return all.value || scope.value === "project" ? base : `${base} · all projects`
+})
+
+const scopeTitle = computed(() => {
+  if (!directory.value) return "No project is open — searching every project"
+  return scope.value === "project"
+    ? "Searching this project — click to search every project"
+    : "Searching every project — click to search only this project"
+})
 
 const modeLabel = computed(() =>
   mode.value === "content" ? "Content search" : mode.value === "fallback" ? "Fallback · titles" : "Checking…",
@@ -202,6 +266,10 @@ function onKeydown(event: KeyboardEvent) {
       move(-1)
       break
     case "Enter": {
+      // A focused button (the scope chip, a result row, "List all") activates
+      // itself on Enter; only the input's Enter opens the highlighted result.
+      const active = document.activeElement
+      if (active instanceof HTMLElement && active.tagName === "BUTTON") return
       event.preventDefault()
       const hit = hits.value[navIndex.value]
       if (hit) void open(hit)
@@ -242,6 +310,11 @@ function onWindowKeydown(event: KeyboardEvent) {
         />
         <button v-if="query" class="clear" title="Clear" @click="query = ''"><X :size="14" /></button>
       </div>
+      <button class="scope" :class="scope" :title="scopeTitle" :disabled="!directory" @click="toggleSearchScope()">
+        <Folder v-if="scope === 'project'" :size="13" />
+        <Globe v-else :size="13" />
+        <span>{{ scope === "project" ? "Project" : "All" }}</span>
+      </button>
       <button class="close" title="Close search (Esc)" @click="closeSearch()"><X :size="16" /></button>
     </header>
 
@@ -266,11 +339,20 @@ function onWindowKeydown(event: KeyboardEvent) {
           <span class="result-title">{{ hit.title }}</span>
           <span class="result-time">{{ relativeTime(hit.updated) }}</span>
         </span>
-        <span v-if="hit.snippet" class="result-snippet">{{ hit.snippet }}</span>
+        <span v-if="hit.snippet || (scope === 'all' && hit.directory)" class="result-sub">
+          <span v-if="scope === 'all' && hit.directory" class="result-project" :title="hit.directory">
+            {{ projectLabel(hit.directory) }}
+          </span>
+          <span v-if="hit.snippet" class="result-snippet">{{ hit.snippet }}</span>
+        </span>
       </button>
 
       <p v-if="!loading && !hits.length" class="empty">
-        {{ query.trim() ? `No conversations match “${query.trim()}”.` : "No conversations yet." }}
+        {{
+          query.trim()
+            ? `No conversations match “${query.trim()}”${scope === "project" ? " in this project" : " in any project"}.`
+            : "No conversations yet."
+        }}
       </p>
     </div>
 
@@ -356,6 +438,36 @@ function onWindowKeydown(event: KeyboardEvent) {
 .close:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+/* The scope toggle: which projects the search covers. */
+.scope {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.scope:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.scope:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.scope:disabled:hover {
+  background: transparent;
+}
+.scope.all {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
 }
 .results-head {
   flex: none;
@@ -459,7 +571,25 @@ function onWindowKeydown(event: KeyboardEvent) {
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+.result-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+/* The project a result belongs to, shown only when the search spans projects. */
+.result-project {
+  flex: none;
+  max-width: 45%;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .result-snippet {
+  flex: 1;
+  min-width: 0;
   font-size: 11.5px;
   color: var(--text-muted);
   overflow: hidden;

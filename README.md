@@ -162,8 +162,10 @@ Conversation search (`Alt`+`F`) uses the shared
 small Bun FTS5/BM25 index over message text, listening on `127.0.0.1:27184`)
 when it is running, and falls back to the server's own title search when it is
 not. The search view's header shows which one answered ("Content search" or
-"Fallback · titles"). Results are scoped to the current project's directory,
-matching the sidebar.
+"Fallback · titles"). The scope chip beside the field chooses whether the
+search covers the open project only (the default, matching the sidebar) or
+every project; the choice is remembered across restarts. Results from other
+projects name their project, and opening one switches to it.
 
 The service lives in its own repository,
 [`opencode-search`](https://github.com/mondalaci/opencode-search), and is shared
