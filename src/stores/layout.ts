@@ -12,7 +12,7 @@ const WIDTH_KEY = "opencode-projects-studio.scm-width"
 export const SCM_MIN_WIDTH = 240
 export const SCM_MAX_WIDTH = 720
 /** Wide enough for the header to hold its label, branch and window buttons. */
-const SCM_DEFAULT_WIDTH = 340
+export const SCM_DEFAULT_WIDTH = 340
 
 function readWidth(): number {
   try {

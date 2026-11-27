@@ -7,6 +7,7 @@ import ProjectMenu from "./ProjectMenu.vue"
 import ProjectPicker from "./ProjectPicker.vue"
 import ShortcutBadge from "./ShortcutBadge.vue"
 import Spinner from "./Spinner.vue"
+import Splitter from "./Splitter.vue"
 import { projectDeleteAvailable } from "@/api/desktop"
 import type { SessionInfo } from "@/api/types"
 import { useApp } from "@/stores/app"
@@ -198,8 +199,6 @@ function loadSplit(): number {
 }
 
 const split = ref(loadSplit())
-/** Whether the divider is being dragged, for its highlight. */
-const splitting = ref(false)
 
 function persistSplit() {
   try {
@@ -209,56 +208,7 @@ function persistSplit() {
   }
 }
 
-function resetSplit() {
-  split.value = 0.5
-  persistSplit()
-}
-
-const recentEl = ref<HTMLElement | null>(null)
-const projectEl = ref<HTMLElement | null>(null)
-
-/**
- * Drag the divider to give either half more room.
- *
- * The two sections share their height by flex-grow, so the drag only has to
- * report a fraction. The area is measured once: the top section's top and the
- * bottom section's bottom stay put while the middle moves.
- */
-function startSplit(event: PointerEvent) {
-  const handle = event.currentTarget as HTMLElement
-  event.preventDefault()
-  const top = recentEl.value?.getBoundingClientRect()
-  const bottom = projectEl.value?.getBoundingClientRect()
-  if (!top || !bottom) return
-  const area = bottom.bottom - top.top
-  if (area <= 0) return
-  handle.setPointerCapture(event.pointerId)
-  splitting.value = true
-  const onMove = (move: PointerEvent) => {
-    split.value = clampSplit((move.clientY - top.top) / area)
-  }
-  const onUp = () => {
-    handle.removeEventListener("pointermove", onMove)
-    handle.removeEventListener("pointerup", onUp)
-    splitting.value = false
-    persistSplit()
-  }
-  handle.addEventListener("pointermove", onMove)
-  handle.addEventListener("pointerup", onUp)
-}
-
-/** The same adjustment from the keyboard, for a focused divider. */
-function onSplitKey(event: KeyboardEvent) {
-  const step = 0.02
-  if (event.key === "ArrowUp") split.value = clampSplit(split.value - step)
-  else if (event.key === "ArrowDown") split.value = clampSplit(split.value + step)
-  else if (event.key === "Home") split.value = 0.5
-  else return
-  event.preventDefault()
-  persistSplit()
-}
-
-/** The split as percentages, which the two sections' flex-grow reads. */
+/** The two sections share their height by flex-grow, so the split is a fraction. */
 const splitStyle = computed(() => ({
   "--split-top": split.value,
   "--split-bottom": 1 - split.value,
@@ -522,7 +472,7 @@ function onKeydown(event: KeyboardEvent) {
   <div class="chats-wrap" :style="splitStyle">
     <!-- The top half: every project's newest conversations, newest first, each
          naming the project it belongs to. -->
-    <section ref="recentEl" class="recent-section">
+    <section class="recent-section">
       <header class="section-head">
         <span class="section-label">
           All chats
@@ -593,27 +543,24 @@ function onKeydown(event: KeyboardEvent) {
 
     <!-- The divider between the two lists: drag (or focus and use the arrows) to
          give either half more room; double-click returns to an even split. -->
-    <div
+    <Splitter
       v-if="projectOpen"
-      class="splitter"
-      :class="{ dragging: splitting }"
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize the chat lists"
-      :aria-valuenow="Math.round(split * 100)"
-      :aria-valuemin="Math.round(SPLIT_MIN * 100)"
-      :aria-valuemax="Math.round(SPLIT_MAX * 100)"
-      tabindex="0"
-      title="Drag to resize (double-click to even them out)"
-      @pointerdown="startSplit"
-      @dblclick="resetSplit"
-      @keydown="onSplitKey"
+      v-model="split"
+      orientation="horizontal"
+      unit="fraction"
+      :min="SPLIT_MIN"
+      :max="SPLIT_MAX"
+      :step="0.02"
+      :reset-to="0.5"
+      :scale="100"
+      label="Resize the chat lists"
+      @commit="persistSplit"
     />
 
     <!-- The bottom half: only the open project's own conversations. Its header
          names the project and is the switcher — Ctrl+R (or Alt+P) opens the
          searchable project list from here. -->
-    <section ref="projectEl" class="project-section" :class="{ collapsed: !projectOpen }">
+    <section class="project-section" :class="{ collapsed: !projectOpen }">
       <header class="project-head">
         <button
           class="project-toggle"
@@ -765,48 +712,6 @@ function onKeydown(event: KeyboardEvent) {
 .project-section.collapsed {
   flex: 0 0 auto;
   min-height: 0;
-}
-/* The divider: a hairline with a wider grab area around it, lit while it is
-   dragged or focused. */
-.splitter {
-  position: relative;
-  flex: none;
-  height: 7px;
-  margin: 1px 0;
-  cursor: row-resize;
-  outline: none;
-}
-.splitter::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 3px;
-  height: 1px;
-  background: var(--border);
-}
-.splitter:hover::before,
-.splitter.dragging::before,
-.splitter:focus-visible::before {
-  background: var(--accent);
-}
-/* A small grip in the middle, so the line reads as draggable rather than as a
-   section rule. */
-.splitter::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 2px;
-  width: 26px;
-  height: 3px;
-  transform: translateX(-50%);
-  border-radius: 2px;
-  background: var(--border-strong);
-}
-.splitter:hover::after,
-.splitter.dragging::after,
-.splitter:focus-visible::after {
-  background: var(--accent);
 }
 .section-head {
   flex: none;

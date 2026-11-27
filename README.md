@@ -35,7 +35,10 @@ conversations:
   beside the title and the staged ones under their own heading. It re-scans the
   working tree on a timer, so there is nothing to refresh by hand; the file names
   keep their two-tone scheme (a dimmer directory leading to a bright file name)
-  and the status lives in the letter beside them.
+  and the status lives in the letter beside them. Its left edge is the divider
+  the chats sidebar has on its right — one make of separator either side of the
+  conversation: drag it, double-click it to return that panel to its default
+  width, or focus it and use the arrows; the width is remembered.
 - **Diffs** — clicking a file in that panel opens it in the editor area: the
   whole file on both sides, split or unified, with line numbers, syntax
   highlighting, `+n −m` statistics, a change map down the right edge and change

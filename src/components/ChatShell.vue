@@ -4,6 +4,7 @@ import { X, ArrowDownToLine, CircleAlert, Check, Hash, Moon, Sun } from "lucide-
 import type { AssistantMessage } from "@/api/types"
 import Sidebar from "./Sidebar.vue"
 import SourceControl from "./SourceControl.vue"
+import Splitter from "./Splitter.vue"
 import DiffViewer from "./DiffViewer.vue"
 import MessageThread from "./MessageThread.vue"
 import Composer from "./Composer.vue"
@@ -23,7 +24,7 @@ import { openRequests, requestOpen, requestPromptStep, setHeldModifier, shortcut
 import { openProjectPicker, toggleProjectPicker } from "@/stores/projectPicker"
 import { searchOpen, openSearch } from "@/stores/search"
 import { findOpen, openFind, closeFind } from "@/stores/find"
-import { applyScmWidth, scmWidth, setScmWidth } from "@/stores/layout"
+import { applyScmWidth, SCM_DEFAULT_WIDTH, SCM_MAX_WIDTH, SCM_MIN_WIDTH, scmWidth, setScmWidth } from "@/stores/layout"
 import { theme, toggleTheme } from "@/theme"
 import { formatConversationDate, formatConversationDateTime, formatCost, formatTokens, formatTokensPerSecond } from "@/utils/format"
 
@@ -89,43 +90,28 @@ function applySidebarWidth() {
   document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth.value}px`)
 }
 
-/** Split.js-style drag handle between the sidebar and the conversation. */
-function startResize(event: PointerEvent) {
-  event.preventDefault()
-  const handle = event.currentTarget as HTMLElement
-  handle.setPointerCapture(event.pointerId)
-  const onMove = (move: PointerEvent) => {
-    sidebarWidth.value = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, move.clientX))
+/** The separator edits the width live; only the end of a drag is worth saving. */
+const sidebarWidthModel = computed({
+  get: () => sidebarWidth.value,
+  set: (value: number) => {
+    sidebarWidth.value = value
     applySidebarWidth()
+  },
+})
+
+function commitSidebarWidth() {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth.value))
+  } catch {
+    /* ignore */
   }
-  const onUp = () => {
-    handle.removeEventListener("pointermove", onMove)
-    handle.removeEventListener("pointerup", onUp)
-    try {
-      localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth.value))
-    } catch {
-      /* ignore */
-    }
-  }
-  handle.addEventListener("pointermove", onMove)
-  handle.addEventListener("pointerup", onUp)
 }
 
-/** Drag handle for the source-control panel on the right; it grows leftwards. */
-function startScmResize(event: PointerEvent) {
-  event.preventDefault()
-  const handle = event.currentTarget as HTMLElement
-  handle.setPointerCapture(event.pointerId)
-  const startX = event.clientX
-  const startWidth = scmWidth.value
-  const onMove = (move: PointerEvent) => setScmWidth(startWidth + (startX - move.clientX))
-  const onUp = () => {
-    handle.removeEventListener("pointermove", onMove)
-    handle.removeEventListener("pointerup", onUp)
-  }
-  handle.addEventListener("pointermove", onMove)
-  handle.addEventListener("pointerup", onUp)
-}
+/** The source-control panel on the right grows leftwards, so its drag inverts. */
+const scmWidthModel = computed({
+  get: () => scmWidth.value,
+  set: setScmWidth,
+})
 
 const title = computed(() => current.value?.title || "New chat")
 
@@ -427,7 +413,15 @@ onBeforeUnmount(() => {
     <div class="sidebar-host">
       <Sidebar />
     </div>
-    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" @pointerdown="startResize"></div>
+    <Splitter
+      v-model="sidebarWidthModel"
+      class="sidebar-splitter"
+      :min="SIDEBAR_MIN"
+      :max="SIDEBAR_MAX"
+      :reset-to="DEFAULT_SIDEBAR"
+      label="Resize sidebar"
+      @commit="commitSidebarWidth"
+    />
 
     <main class="main">
       <DiffViewer v-if="activeDiff" />
@@ -509,13 +503,15 @@ onBeforeUnmount(() => {
 
     <ImageLightbox />
 
-    <div
-      class="resizer right"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize source control panel"
-      @pointerdown="startScmResize"
-    ></div>
+    <Splitter
+      v-model="scmWidthModel"
+      class="scm-splitter"
+      :min="SCM_MIN_WIDTH"
+      :max="SCM_MAX_WIDTH"
+      :reset-to="SCM_DEFAULT_WIDTH"
+      invert
+      label="Resize source control panel"
+    />
     <div class="scm-host">
       <SourceControl />
     </div>
@@ -558,25 +554,14 @@ onBeforeUnmount(() => {
   }
   /* The panel would leave no room for the conversation on a narrow window. */
   .scm-host,
-  .resizer.right {
+  .scm-splitter {
     display: none;
   }
 }
-.resizer {
-  flex: none;
-  width: 5px;
-  cursor: col-resize;
-  touch-action: none;
-  background: transparent;
-  transition: background 0.12s;
-}
-.resizer:hover,
-.resizer:active {
-  background: var(--accent);
-  opacity: 0.5;
-}
+/* The sidebar's separator goes with it: a lone band at the window's edge would
+   be a handle to nothing. */
 @media (max-width: 720px) {
-  .resizer {
+  .sidebar-splitter {
     display: none;
   }
 }
