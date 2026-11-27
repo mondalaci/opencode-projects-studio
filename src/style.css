@@ -64,15 +64,13 @@ html[data-theme="dark"] {
   --row-active-ring: #f2f2f2;
   /*
    * The accent is the app's one interactive colour: links, selection, the open
-   * conversation, primary buttons. It is a blue on purpose — red and green are
-   * spent on conversation state (blocked, done), so an accent in either of those
-   * hues made the open row look like a row that wanted something. The ink on it
-   * is dark in this theme, because a blue bright enough to read on #212121 is
-   * too bright to carry white text.
+   * conversation, primary buttons. It is the terracotta of OpenCode Chat, so the
+   * studio and the web chat read as one product, and the ink on it is white in
+   * both themes, as it is there.
    */
-  --accent: #5b9bff;
-  --accent-hover: #7cb2ff;
-  --accent-text: #0d1117;
+  --accent: #d97757;
+  --accent-hover: #e08a6d;
+  --accent-text: #ffffff;
   --code-bg: #0f0f0f;
   --code-border: #333;
   --danger: #ef6b6b;
@@ -98,9 +96,9 @@ html[data-theme="light"] {
   --border-strong: #cfcfd4;
   /* The same ring in the light theme's strongest ink. */
   --row-active-ring: #1c1c1e;
-  /* The same blue, darkened for a white ground. */
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  /* The same terracotta, darkened for a white ground. */
+  --accent: #c96442;
+  --accent-hover: #b85738;
   --accent-text: #ffffff;
   --code-bg: #0f172a;
   --code-border: #1e293b;
