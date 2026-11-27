@@ -673,11 +673,11 @@ function isCompose(block: AssistantToolBlock): boolean {
  *
  * Measured on the thread rather than the window: the sidebar and the
  * source-control panel are what really decide whether a gutter is there. The
- * breakpoint is the content column (46rem) plus the 120px of gutter each side
+ * breakpoint is the content column (60rem) plus the 120px of gutter each side
  * that the date needs to fit beside the avatar, less a few pixels of slack —
  * a condition cannot read the variable, so it carries the sum in its own words.
  */
-@container thread (max-width: 975px) {
+@container thread (max-width: 1199px) {
   .meta {
     position: static;
     height: auto;

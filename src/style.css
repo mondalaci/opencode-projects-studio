@@ -5,7 +5,9 @@
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 16px;
-  --content-width: 46rem;
+  /* Wide enough for the tables and code a reply carries: the conversation is a
+     workspace, not a page of prose. Only a maximum — a narrow panel still wins. */
+  --content-width: 60rem;
   --sidebar-width: 264px;
   --scm-width: 300px;
   --header-height: 40px;
@@ -378,21 +380,42 @@ a {
   color: #4ade80;
   border-color: color-mix(in srgb, #4ade80 50%, transparent);
 }
+/* A table fills the column it is in and wraps, rather than sizing itself to its
+   content and hanging a scrollbar under the message. Sizing to content is what
+   made a wide comparison table the one place a reader had to scroll sideways
+   inside the conversation; `anywhere` lets a cell break a long token when the
+   column is genuinely too tight, so every row stays in view. The thread clips
+   sideways overflow, which is why a table that overflowed would have been cut
+   off rather than scrolled. */
 .markdown table {
+  display: table;
+  width: 100%;
   border-collapse: collapse;
   margin: 0 0 0.9em;
-  display: block;
-  overflow-x: auto;
 }
 .markdown th,
 .markdown td {
   border: 1px solid var(--border);
   padding: 0.4em 0.7em;
   text-align: left;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .markdown th {
   background: var(--bg-elevated);
+}
+/* The width at which `MessageItem` gives up the metadata gutter. A thread this
+   tight has no room to spare, so tables tighten their type and padding: a wide
+   comparison then stays inside the column without breaking its tokens. The
+   condition cannot read `--content-width`, so it carries the sum in its own
+   words — the content column (60rem) plus the metadata gutter each side. */
+@container thread (max-width: 1199px) {
+  .markdown table {
+    font-size: 0.9em;
+  }
+  .markdown th,
+  .markdown td {
+    padding: 0.35em 0.5em;
+  }
 }
 .markdown hr {
   border: 0;

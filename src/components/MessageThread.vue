@@ -386,9 +386,10 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   /* A conversation never scrolls sideways. Parts that are genuinely wider than
-     the column — a code block, a table, a diagram — carry their own scrollbar,
-     so anything left over is a line that failed to wrap: it should be clipped
-     rather than drag the whole conversation out of view. */
+     the column — a code block or a diagram — carry their own scrollbar, and a
+     table wraps to fit instead, so anything left over is a line that failed to
+     wrap: it should be clipped rather than drag the whole conversation out of
+     view. */
   overflow-x: hidden;
   padding: 20px 20px 0;
   /* Message metadata hangs in the gutter outside the content column, and how
