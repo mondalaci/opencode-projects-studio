@@ -104,6 +104,11 @@ const waiting = computed(
   () => isBusy.value && !awaitingUser.value && !turnReply.value && newest.value === "user",
 )
 
+/** Whether the thread is showing the end of the conversation. */
+function atEnd(el = viewport.value) {
+  return !!el && el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_EPSILON
+}
+
 function onScroll() {
   const el = viewport.value
   if (!el) return
@@ -120,15 +125,56 @@ function onScroll() {
   // Any non-programmatic scroll that leaves the bottom detaches immediately, so
   // even a small scroll-up during streaming sticks instead of being pulled back.
   // Re-attach only when the user returns to (near) the bottom themselves.
-  pinned.value = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_EPSILON
+  pinned.value = atEnd(el)
 }
 
 function detach() {
   pinned.value = false
 }
 
+/**
+ * Whether this scroll will be taken by a part of a message that scrolls on its
+ * own — a tool's output, a reasoning block, a long notice — rather than by the
+ * thread.
+ *
+ * Such a part takes the wheel first and the thread stays exactly where it is,
+ * so a scroll over it says nothing about the reader leaving the end of the
+ * conversation. Reading back through a tool's output is not leaving it, and
+ * treating it as if it were stopped the follow while the thread was still at
+ * the end — where no scroll of its own can ever start it again, because there
+ * is nothing left to scroll. The conversation then sat still while the reply
+ * went on below the fold, and scrolling down did not bring it back: the thread
+ * was already at its end, so the wheel had nothing to move.
+ *
+ * `deltaY` is negative for a scroll toward the start, which is the only
+ * direction that can leave the end.
+ */
+function takenByPart(path: EventTarget[], deltaY: number): boolean {
+  for (const node of path) {
+    if (node === viewport.value) return false
+    if (!(node instanceof HTMLElement)) continue
+    const overflow = getComputedStyle(node).overflowY
+    if (overflow !== "auto" && overflow !== "scroll") continue
+    // Where the part has somewhere to go, the browser gives it the scroll and
+    // never passes it on to the thread.
+    if (deltaY < 0 ? node.scrollTop > 0.5 : node.scrollHeight - node.clientHeight - node.scrollTop > 0.5) {
+      return true
+    }
+  }
+  return false
+}
+
 function onWheel(event: WheelEvent) {
-  if (event.deltaY < 0) detach()
+  const el = viewport.value
+  if (!el) return
+  if (event.deltaY < 0) {
+    if (!takenByPart(event.composedPath(), event.deltaY)) detach()
+    return
+  }
+  // Down with nowhere further down to go: the thread is already at the end, so
+  // no scroll of its own will ever come to say so. Take the wheel itself as the
+  // reader asking for the end, and follow again.
+  if (event.deltaY > 0 && atEnd(el)) pinned.value = true
 }
 
 function onTouchStart(event: TouchEvent) {
@@ -136,7 +182,9 @@ function onTouchStart(event: TouchEvent) {
 }
 
 function onTouchMove(event: TouchEvent) {
-  if ((event.touches[0]?.clientY ?? 0) > touchY + 4) detach()
+  // A finger moving down scrolls toward the start, and says as little about
+  // leaving the end as a wheel does when a part of a message takes it.
+  if ((event.touches[0]?.clientY ?? 0) > touchY + 4 && !takenByPart(event.composedPath(), -1)) detach()
 }
 
 async function scrollToBottom(explicit = false) {
