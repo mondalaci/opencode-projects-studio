@@ -129,6 +129,14 @@ function startScmResize(event: PointerEvent) {
 
 const title = computed(() => current.value?.title || "New chat")
 
+/**
+ * The project the conversation lives in, shown before its title so the header
+ * reads as "project › subject" rather than as one anonymous string. The pane is
+ * scoped to a single project, so the name comes from that directory; a
+ * directory with no project row falls back to its folder name.
+ */
+const projectLabel = computed(() => app.projects.displayName(app.server.directory.value))
+
 /** The `/connect` dialog, opened by its slash command. */
 const integrationsDialog = ref<InstanceType<typeof IntegrationsDialog> | null>(null)
 watch(
@@ -427,7 +435,11 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <header class="topbar drag-region">
-          <h1 class="title">{{ title }}</h1>
+          <div class="heading">
+            <span v-if="projectLabel" class="heading-project" :title="app.server.directory.value">{{ projectLabel }}</span>
+            <span v-if="projectLabel" class="heading-sep" aria-hidden="true">›</span>
+            <h1 class="title">{{ title }}</h1>
+          </div>
           <div v-if="current" class="stats">
             <span v-if="conversationDate" class="stat" :title="conversationDateTitle">{{ conversationDate }}</span>
             <span v-if="conversationDate" class="stat-divider">·</span>
@@ -600,6 +612,41 @@ onBeforeUnmount(() => {
   background: linear-gradient(to bottom, var(--bg), transparent);
   pointer-events: none;
   z-index: 1;
+}
+/* The header's subject, in two parts that read as different kinds of thing: the
+   project is a quiet chip, the conversation's own title is the loud line after
+   it. Sharing a row, the two never run together into one long string. */
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.heading-project {
+  flex: none;
+  max-width: 38%;
+  padding: 1px 8px;
+  /* The chip has to hold its shape against the header's own tint, not just its
+     text against the chip: a hover-strength fill read as faint type in a hairline
+     ring, so it takes the raised-surface step and the stronger border, and its
+     label is the theme's full ink. It still sits behind the title, because that
+     one is 15px/600 against this 11.5px/500. */
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heading-sep {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 .title {
   font-size: 15px;

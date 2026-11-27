@@ -299,6 +299,11 @@ maximizes it. The sidebar spends no height on a header of its own: its search an
 new-chat buttons float over the top of the chat lists, and a bare grip of the same
 height across that row is the dragging surface there.
 
+The conversation pane's header names what is open in two parts: the project the
+conversation lives in, as a muted chip, and then the conversation's own title in
+the theme's strongest text. The chip is a different shape and weight on purpose,
+so a long project name and a long title never read as one run-on string.
+
 Two consequences of dropping the frame are handled explicitly:
 
 - **Resizing.** Electron keeps edge resizing for frameless windows on Windows
