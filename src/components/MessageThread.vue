@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { ChevronRight } from "lucide-vue-next"
 import type { SessionMessage } from "@/api/types"
 import MessageItem from "./MessageItem.vue"
@@ -63,9 +63,34 @@ function toggleTurn(key: string) {
 // Distance (px) from the bottom that still counts as "at the bottom".
 const BOTTOM_EPSILON = 8
 
-// A scroll event produced by our own scrollToBottom must not be mistaken for a
-// user decision to detach from the bottom.
-let programmatic = false
+/**
+ * How close to the end, in screens, the reader has to be for a scroll toward it
+ * to count as a return to the live end rather than as reading back through the
+ * conversation.
+ *
+ * A screenful, because that is what "I scrolled down to the new messages" looks
+ * like: the reader stops when the reply is in view, not on the last pixel. The
+ * old rule re-attached only within `BOTTOM_EPSILON` of the end, so during a
+ * stream — where the end moves away as they scroll — they stopped just short of
+ * it and the thread fell behind with the follow still off, which is the
+ * "scrolling down does not make it follow" that kept coming back.
+ */
+const RETURN_SCREENS = 1
+
+/**
+ * Where our own follow last put the thread, so the scroll event it raises is not
+ * mistaken for a decision to detach from the bottom.
+ *
+ * A flag that says "a follow is in flight" would not do: the follow runs on the
+ * frame a growth lands, so a reader who scrolled up in that same frame would have
+ * their move swallowed as the echo of our own write and be pulled back to the
+ * bottom. The position can tell the two apart, and a stale value is harmless —
+ * it is a position the thread would only be at by being at the bottom anyway.
+ */
+let followed: number | null = null
+
+/** The last offset seen, so a scroll event says which way the reader moved. */
+let lastTop = 0
 let touchY = 0
 
 const lastAssistantID = computed(() => {
@@ -156,9 +181,17 @@ function atEnd(el = viewport.value) {
 function onScroll() {
   const el = viewport.value
   if (!el) return
-  if (programmatic) {
-    programmatic = false
-    return
+  const top = el.scrollTop
+  // Which way this event moved the thread. Read before the follow's own echo is
+  // discounted below, so the next event compares against where we actually are.
+  const down = top > lastTop + 0.5
+  lastTop = top
+  if (followed !== null) {
+    const ours = followed
+    followed = null
+    // Our own follow coming back. Anything else is the reader's move, and it is
+    // judged below.
+    if (Math.abs(top - ours) <= BOTTOM_EPSILON) return
   }
   // While the thread is loading, the spinner stands in for the conversation and
   // the area is shorter than it was: the offset is clamped, and the viewport then
@@ -166,10 +199,17 @@ function onScroll() {
   // the reader returning, and re-pinning on it would drag a long conversation to
   // its end as soon as the messages came back.
   if (loading.value) return
-  // Any non-programmatic scroll that leaves the bottom detaches immediately, so
-  // even a small scroll-up during streaming sticks instead of being pulled back.
-  // Re-attach only when the user returns to (near) the bottom themselves.
-  pinned.value = atEnd(el)
+  // Any scroll of the reader's own that leaves the bottom detaches immediately,
+  // so even a small scroll-up during streaming sticks instead of being pulled
+  // back. Going the other way, a reader scrolling down with the end on screen is
+  // coming back to the conversation, not reading history: follow again, and go
+  // to the end they asked for. Waiting for them to land within a few pixels of
+  // it made that depend on hitting a moving target exactly, which is why the
+  // follow used to stay off after they had scrolled back down.
+  const distance = el.scrollHeight - top - el.clientHeight
+  const returning = down && distance <= el.clientHeight * RETURN_SCREENS
+  pinned.value = distance <= BOTTOM_EPSILON || returning
+  if (returning) pinToBottom()
 }
 
 function detach() {
@@ -231,35 +271,62 @@ function onTouchMove(event: TouchEvent) {
   if ((event.touches[0]?.clientY ?? 0) > touchY + 4 && !takenByPart(event.composedPath(), -1)) detach()
 }
 
-async function scrollToBottom(explicit = false) {
+/** Put the end of the conversation at the bottom edge, if the reader is there. */
+function pinToBottom(explicit = false) {
   // While the find bar is open the reader is searching, not following the
   // reply: pinning to the bottom would yank the view off whatever they jumped
   // to. Resume following once the bar closes. An explicit request — a prompt
   // just sent, a view returning, the button at the end of the window — is the
   // reader asking, not the follow doing it, so it goes through.
   if (!explicit && (!pinned.value || findOpen.value)) return
-  await nextTick()
   const el = viewport.value
   if (!el || !pinned.value) return
-  programmatic = true
   el.scrollTop = el.scrollHeight
-  // The scroll event fires before animation-frame callbacks; clear here too in
-  // case setting scrollTop produced no event (already at the bottom).
-  requestAnimationFrame(() => {
-    programmatic = false
-  })
+  followed = el.scrollTop
+}
+
+/** The same, once the update that asked for it has reached the DOM. */
+async function scrollToBottom(explicit = false) {
+  await nextTick()
+  pinToBottom(explicit)
 }
 
 /**
- * Follow the conversation as it changes.
+ * Follow the conversation as the thread grows.
  *
- * Not a deep watcher: every update in the store replaces the array — a streamed
- * token, a tool's state, a new prompt — so watching the ref is enough, while
- * `deep` walked every message, every block and every tool's whole output on
- * every token, which on a long conversation is megabytes per delta.
+ * Watching the message list is not enough. The list is replaced on every delta,
+ * but the height it gives the thread arrives a frame later, and some growth the
+ * store never sees at all: an image or a diagram settling into its layout, a
+ * code block highlighted after it was inserted, a message the browser had only
+ * estimated the size of (the thread's `content-visibility`) being laid out for
+ * real once it came into view. A follow that wrote `scrollTop = scrollHeight`
+ * from the estimated height landed short of the end, and nothing asked it to
+ * try again — the reply went on below the fold while the view sat above it.
+ *
+ * What the follow needs to know is not what changed but that the thread got
+ * taller, so the content's own box is what is watched. The observer runs with
+ * the layout that grew the thread, so the follow is applied in the same frame
+ * as the growth rather than a frame late, and it is a no-op for a reader who
+ * has gone up the conversation.
  */
-watch(messages, () => {
-  if (pinned.value) void scrollToBottom()
+let follower: ResizeObserver | null = null
+
+watch(
+  content,
+  (element) => {
+    follower?.disconnect()
+    follower = null
+    if (!element) return
+    follower = new ResizeObserver(() => pinToBottom())
+    follower.observe(element)
+  },
+  // The ref holds an element only once the loading spinner is gone.
+  { flush: "post" },
+)
+
+onBeforeUnmount(() => {
+  follower?.disconnect()
+  follower = null
 })
 
 watch(loading, (value) => {
@@ -281,7 +348,8 @@ watch(pinned, (value) => { contentBelow.value = !value }, { immediate: true })
 
 watch(currentSessionID, () => {
   pinned.value = true
-  programmatic = false
+  followed = null
+  lastTop = 0
   opened.value = new Set()
 }, { flush: "post" })
 
