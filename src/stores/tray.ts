@@ -65,6 +65,29 @@ export function useTray() {
   let seeded = false
 
   /**
+   * Conversations that already carried an unread finish when this run began.
+   *
+   * The mark survived from a time nobody was watching, so it is old news: a
+   * reload must not announce every one of them as the sidebar's rows arrive —
+   * which sounds like a pile of conversations finishing while the user is in the
+   * middle of something else. An id leaves the set when its mark is cleared, so
+   * the next finish of that conversation is announced.
+   */
+  const oldFinishes = new Set(state.unread.value)
+
+  /**
+   * How long a fresh start waits before its baseline pass is final.
+   *
+   * The conversation lists arrive a moment after the window opens, and a
+   * baseline taken before them is empty: every unread finish — and every
+   * waiting question — that loads a heartbeat later then looked like news, so a
+   * reload sounded like a pile of conversations finishing at once. Until the
+   * window is over the tray records what it sees without announcing it.
+   */
+  const BASELINE_SETTLE_MS = 2500
+  const startedAt = Date.now()
+
+  /**
    * Everything the tray shows, flattened into one string to watch. Watching the
    * pieces separately would miss a menu whose length stays the same while its
    * labels change, which is the common case (a project going working -> done).
@@ -235,6 +258,11 @@ export function useTray() {
     for (const conversation of webchat.conversations.value) {
       if (conversation.state !== "blocked" && conversation.state !== "done") continue
       if (wanted.has(conversation.id)) continue
+      // The studio's own stream is the authority on whether that conversation is
+      // still running: a tab that has just reloaded has no status yet, and its
+      // unread set still holds a finish from before — taking its "done" for a
+      // running turn is what made the chime sound in the middle of one.
+      if (conversation.state === "done" && state.stateFor(conversation.id) === "working") continue
       wanted.set(conversation.id, {
         id: conversation.id,
         title: conversation.title,
@@ -258,7 +286,14 @@ export function useTray() {
   function announce() {
     const wanted = attentionWanted()
     const away = unfocused()
+    // A mark the user has dealt with no longer protects its conversation, and
+    // neither does one that has since gone back to work: either way the next
+    // finish of it is news, exactly as it would have been without history.
+    for (const id of oldFinishes) {
+      if (!state.unread.value.has(id) || state.stateFor(id) === "working") oldFinishes.delete(id)
+    }
     for (const conversation of wanted.values()) {
+      if (oldFinishes.has(conversation.id)) continue
       if (
         !shouldAnnounce({
           state: conversation.state,
@@ -266,7 +301,7 @@ export function useTray() {
           muted: muted.value,
           unfocused: away,
           isCurrent: conversation.isCurrent,
-          seeded,
+          seeded: seeded && Date.now() - startedAt >= BASELINE_SETTLE_MS,
         })
       ) {
         continue

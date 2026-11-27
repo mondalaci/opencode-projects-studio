@@ -449,6 +449,14 @@ is the one that shouts — and Electron runs with
 `autoplayPolicy: "no-user-gesture-required"` so they can sound without a click
 first.
 
+The app announces a *transition*, not a state. Unread marks that survived from
+before this run, and the conversation rows that arrive a moment after the window
+opens, are recorded as the baseline rather than announced — otherwise a reload
+would sound like every old finish landing at once. For the same reason a tab of
+the web chat app cannot report a running conversation as finished: a freshly
+loaded tab has no status yet, and its saved unread mark would otherwise be taken
+for a new finish.
+
 The audio context is rebuilt after a system resume or an audio device change: a
 USB headset that is re-enumerated on wake leaves the old context silent even
 though it still reports running. The tray's **Test sound** item plays the chime
