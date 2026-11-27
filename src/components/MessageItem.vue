@@ -664,20 +664,24 @@ function isCompose(block: AssistantToolBlock): boolean {
 .meta-datetime {
   font-variant-numeric: tabular-nums;
 }
-/* A thread too narrow to hang the metadata in: the gutter is gone, and there is
-   nowhere beside the text for something that is always on screen. The date takes
-   a line of the message's own column instead — the byline over the bubble it
-   belongs to, level with the avatar — and what the modifier adds keeps out of
-   the flow, hanging under the date as a card, so revealing it never pushes the
-   conversation around.
+/* A thread whose gutter cannot hold the date: there is nowhere beside the text
+   for something that is always on screen. The date takes a line of the message's
+   own column instead — the byline over the bubble it belongs to, level with the
+   avatar — and what the modifier adds keeps out of the flow, hanging under the
+   date as a card, so revealing it never pushes the conversation around.
  *
- * Measured on the thread rather than the window: the sidebar and the
- * source-control panel are what really decide whether a gutter is there. The
- * breakpoint is the content column (60rem) plus the 120px of gutter each side
- * that the date needs to fit beside the avatar, less a few pixels of slack —
- * a condition cannot read the variable, so it carries the sum in its own words.
+ * Only a thread whose gutter cannot hold the date comes here: the sidebar and the
+ * source-control panel are what decide that, not the window, so the breakpoint is
+ * measured on the thread. A container query reads the thread's content box, some
+ * 40px inside its edges, and the block may hang over that padding as well: the
+ * content column (60rem) plus twice what one date needs beside the avatar — 70px
+ * at 11px, and the 14px that keeps the block off the row — less the 20px of
+ * padding a side, so 1090. A date that carries a year is a little wider and
+ * reaches further into that margin, which is empty either way, so a thread with
+ * room for a date never spends a line on one. A condition cannot read the
+ * variable, so it carries the sum in its own words.
  */
-@container thread (max-width: 1199px) {
+@container thread (max-width: 1089px) {
   .meta {
     position: static;
     height: auto;
@@ -697,10 +701,16 @@ function isCompose(block: AssistantToolBlock): boolean {
   .message.user .meta {
     text-align: right;
   }
+  /* The card hangs in front of the reply's first lines, so it has to be painted
+     over them. The bubble carries `content-visibility`, which makes it a stacking
+     context of its own, and without a step here it paints over the card — the
+     border and the two sets of text mixed into one unreadable line. Above the
+     bubble is where the shadow and the card's own ground already assumed it was. */
   .meta-rest {
     position: absolute;
     top: 100%;
     left: 0;
+    z-index: 1;
     padding: 4px 8px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
