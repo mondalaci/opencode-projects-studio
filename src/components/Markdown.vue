@@ -165,6 +165,27 @@ function decorateCode() {
 }
 
 /**
+ * Wrap each table in a scroller of its own.
+ *
+ * A table is the one block a reply cannot re-flow: it is read down a column, so
+ * a column squeezed below its widest word does not arrive as a tighter table but
+ * as a broken one — `Diodes` as `Diod` and `es`, `0.22` as `0.2` and `2`. Only a
+ * table whose words cannot be wrapped any narrower is allowed to scroll, under
+ * the wrapper's own bar; every other one wraps between its words, as the
+ * column's width requires.
+ */
+function decorateTables() {
+  if (!root.value) return
+  root.value.querySelectorAll<HTMLTableElement>("table").forEach((table) => {
+    if (table.parentElement?.classList.contains("table-wrap")) return
+    const wrapper = document.createElement("div")
+    wrapper.className = "table-wrap"
+    table.parentNode?.insertBefore(wrapper, table)
+    wrapper.appendChild(table)
+  })
+}
+
+/**
  * The position just past a code block's last character, ignoring the newline that
  * closes its final line (the one marked appends to every fenced block).
  */
@@ -397,6 +418,7 @@ function renderPronunciation() {
 function renderAll() {
   highlight()
   decorateCode()
+  decorateTables()
   resolveLocalImages()
   void renderMermaid()
   renderPronunciation()

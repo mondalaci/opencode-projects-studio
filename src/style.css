@@ -378,32 +378,51 @@ a {
   color: #4ade80;
   border-color: color-mix(in srgb, #4ade80 50%, transparent);
 }
-/* A table fills the column it is in and wraps, rather than sizing itself to its
-   content and hanging a scrollbar under the message. Sizing to content is what
-   made a wide comparison table the one place a reader had to scroll sideways
-   inside the conversation; `anywhere` lets a cell break a long token when the
-   column is genuinely too tight, so every row stays in view. The thread clips
-   sideways overflow, which is why a table that overflowed would have been cut
-   off rather than scrolled. */
+/* A table fills the column, wraps between its words, and is scrolled only when
+   its words alone add up to more than the column — the one thing it must never
+   do is split a word to make a column fit.
+
+   `overflow-wrap: anywhere` was tried here for exactly that, to keep a wide
+   table from ever hanging a scrollbar. A table is read *down* a column, so the
+   pinch did not read as a tighter table but as a broken one: `Diodes` arrived
+   as `Diod` and `es`, `0.22` as `0.2` and `2`, and the headers broke too —
+   seven columns in a 900px column leaves each about eight characters. What was
+   wanted is `break-word`: a token is dropped only when it is wider than the
+   line it was given (a URL in a cell), and otherwise the cell wraps where a
+   space or a hyphen already is.
+
+   The wrapper takes the one case that is left — a table whose words cannot be
+   wrapped any narrower. The thread clips sideways overflow, so without its own
+   scroller those last columns would be cut off rather than reachable. */
+.markdown .table-wrap {
+  overflow-x: auto;
+  /* The bar sits below the last row rather than on top of it. */
+  padding-bottom: 2px;
+  margin: 0 0 0.9em;
+}
 .markdown table {
-  display: table;
+  /* As wide as the column, and never narrower than its words: a table that
+     cannot shrink any further overflows into the wrapper's bar. */
   width: 100%;
   border-collapse: collapse;
-  margin: 0 0 0.9em;
+  margin: 0;
 }
 .markdown th,
 .markdown td {
   border: 1px solid var(--border);
   padding: 0.4em 0.7em;
   text-align: left;
-  overflow-wrap: anywhere;
+  /* A word is never split to make a column fit. `break-word` still drops a token
+     that is wider than the line it was given — a long URL in a cell — but it no
+     longer shaves the tail off `Diodes` to balance a column. */
+  overflow-wrap: break-word;
 }
 .markdown th {
   background: var(--bg-elevated);
 }
 /* The width at which `MessageItem` gives up the metadata gutter. A thread this
    tight has no room to spare, so tables tighten their type and padding: a wide
-   comparison then stays inside the column without breaking its tokens. The
+   comparison then has a chance of fitting the column without a scrollbar. The
    condition cannot read `--content-width`, so it carries the sum in its own
    words — the content column (60rem) plus the metadata gutter each side. */
 @container thread (max-width: 1199px) {
