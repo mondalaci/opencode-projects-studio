@@ -64,7 +64,7 @@ function toggleTurn(key: string) {
 const BOTTOM_EPSILON = 8
 
 /**
- * How close to the end, in screens, the reader has to be for a scroll toward it
+ * How close to the end, in screens, the reader has to get for a scroll toward it
  * to count as a return to the live end rather than as reading back through the
  * conversation.
  *
@@ -76,6 +76,20 @@ const BOTTOM_EPSILON = 8
  * "scrolling down does not make it follow" that kept coming back.
  */
 const RETURN_SCREENS = 1
+
+/**
+ * Whether the reader has been further up the conversation than that band since
+ * the follow last held them.
+ *
+ * Coming back into the band is a return only from somewhere further away. A
+ * reader who nudged the thread up half a screen to re-read a line and then
+ * nudged it back down is reading *around* the end, not returning to it, and
+ * picking the follow up on that nudge moves the text under their eyes on the
+ * next token: a scroll of a few pixels answered by the whole tail. That is the
+ * "scroll down even a bit and it goes all the way to the bottom" that the band
+ * on its own produced.
+ */
+let strayed = false
 
 /**
  * Where our own follow last put the thread, so the scroll event it raises is not
@@ -201,15 +215,24 @@ function onScroll() {
   if (loading.value) return
   // Any scroll of the reader's own that leaves the bottom detaches immediately,
   // so even a small scroll-up during streaming sticks instead of being pulled
-  // back. Going the other way, a reader scrolling down with the end on screen is
-  // coming back to the conversation, not reading history: follow again, and go
-  // to the end they asked for. Waiting for them to land within a few pixels of
-  // it made that depend on hitting a moving target exactly, which is why the
-  // follow used to stay off after they had scrolled back down.
+  // back. Going the other way, a reader who has been further up the conversation
+  // and is coming back down into the last screenful is asking for the live end:
+  // follow again, and let the follow carry them there as the reply grows. The
+  // scroll itself does not take them: writing the end under their hand is the
+  // jump they did not ask for, and in a thread at rest nothing would follow it
+  // anyway.
+  //
+  // Only while a turn is writing, though, because that is the only time the end
+  // moves away from them and so the only time stopping short of it needs
+  // forgiving. In a conversation at rest the end stays where it is and they can
+  // reach it themselves; resuming the follow on the way there would take the
+  // next growth — a folded turn opened, an image settling — as a reason to drag
+  // them past what they were reading.
   const distance = el.scrollHeight - top - el.clientHeight
-  const returning = down && distance <= el.clientHeight * RETURN_SCREENS
+  const band = el.clientHeight * RETURN_SCREENS
+  const returning = down && isBusy.value && strayed && distance <= band
   pinned.value = distance <= BOTTOM_EPSILON || returning
-  if (returning) pinToBottom()
+  strayed = !pinned.value && distance > band
 }
 
 function detach() {
@@ -258,7 +281,10 @@ function onWheel(event: WheelEvent) {
   // Down with nowhere further down to go: the thread is already at the end, so
   // no scroll of its own will ever come to say so. Take the wheel itself as the
   // reader asking for the end, and follow again.
-  if (event.deltaY > 0 && atEnd(el)) pinned.value = true
+  if (event.deltaY > 0 && atEnd(el)) {
+    pinned.value = true
+    strayed = false
+  }
 }
 
 function onTouchStart(event: TouchEvent) {
@@ -335,6 +361,7 @@ watch(loading, (value) => {
 
 watch(scrollToBottomRequest, () => {
   pinned.value = true
+  strayed = false
   void scrollToBottom(true)
 })
 
@@ -350,6 +377,7 @@ watch(currentSessionID, () => {
   pinned.value = true
   followed = null
   lastTop = 0
+  strayed = false
   opened.value = new Set()
 }, { flush: "post" })
 
